@@ -42,8 +42,7 @@
 
 #include <seqan/basic.h>
 #include <seqan/stream.h>
-#include <seqan/seq_io/guess_stream_format.h>
-#include <seqan/seq_io/read_fasta_fastq.h>
+#include <seqan/seq_io.h>
 #include <seqan/sequence.h>
 
 namespace OpenMS
@@ -75,47 +74,52 @@ namespace OpenMS
     }
 
 
-    std::fstream in(filename.c_str(), std::ios::binary | std::ios::in);
-    seqan::RecordReader<std::fstream, seqan::SinglePass<> > reader(in);
+    seqan::SeqFileIn in(filename.c_str());
+    //seqan::RecordReader<std::fstream, seqan::SinglePass<> > reader(in);
 
-    String id, seq;
+    std::string id_tmp, seq;
+    String id, msg;
     String::size_type position = String::npos;
     Size size_read(0);
 
-    while (!atEnd(reader))
-    {
-      if (readRecord(id, seq, reader, seqan::Fasta()) != 0)
+    while (!atEnd(in))
+    {        
+      try
       {
-        String msg;
+        readRecord(id_tmp, seq, in);
+
         if (data.empty()) msg = "The first entry could not be read!";
         else msg = "The last successful FASTA record was: '>" + data.back().identifier + "'. The record after failed.";
+
+        FASTAEntry newEntry;
+        newEntry.sequence = seq;
+        newEntry.sequence.removeWhitespaces();
+
+        // handle id
+        id = id_tmp;
+        id = id.trim();
+        position = id.find_first_of(" \v\t");
+        if (position == String::npos)
+        {
+          newEntry.identifier = id;
+          newEntry.description = "";
+        }
+        else
+        {
+          newEntry.identifier = id.substr(0, position);
+          newEntry.description = id.suffix(id.size() - position - 1);
+        }
+        id.clear();
+        seq.clear();
+        data.push_back(newEntry);
+        size_read += newEntry.sequence.length();
+
+      }
+      catch (seqan::Exception const & e)
+      {
         throw Exception::ParseError(__FILE__, __LINE__, __PRETTY_FUNCTION__, "", "Error while parsing FASTA file '" + filename + "'! " + msg +  " Please check the file!");
       }
-
-      FASTAEntry newEntry;
-      newEntry.sequence = seq;
-      newEntry.sequence.removeWhitespaces();
-
-      // handle id
-      id = id.trim();
-      position = id.find_first_of(" \v\t");
-      if (position == String::npos)
-      {
-        newEntry.identifier = id;
-        newEntry.description = "";
-      }
-      else
-      {
-        newEntry.identifier = id.substr(0, position);
-        newEntry.description = id.suffix(id.size() - position - 1);
-      }
-      id.clear();
-      seq.clear();
-      data.push_back(newEntry);
-      size_read += newEntry.sequence.length();
     }
-
-    in.close();
 
     if (size_read > 0 && data.empty())
       LOG_WARN << "No entries from FASTA file read. Does the file have MacOS "
@@ -127,31 +131,29 @@ namespace OpenMS
 
   void FASTAFile::store(const String& filename, const vector<FASTAEntry>& data) const
   {
-    ofstream outfile;
-    outfile.open(filename.c_str(), ofstream::out);
+    //ofstream outfile;
+    //outfile.open(filename.c_str(), ofstream::out);
+    seqan::SequenceOutputOptions fasta_opts;
+    fasta_opts.lineLength = 80;
 
-    if (!outfile.good())
+    seqan::SeqFileOut outfile;
+    if(!seqan::open(outfile, filename.c_str()))
     {
       throw Exception::UnableToCreateFile(__FILE__, __LINE__, __PRETTY_FUNCTION__, filename);
     }
+    seqan::context(outfile).options.lineLength = 80;
 
     for (vector<FASTAEntry>::const_iterator it = data.begin(); it != data.end(); ++it)
-    {
-      outfile << ">" << it->identifier << " " << it->description << "\n";
-
-      String tmp(it->sequence);
-      while (tmp.size() > 80) // surprisingly fast, even though its using erase(). For-loop with substr() is much SLOWER!
+    {      
+      std::string header = it->identifier + " " + it->description;
+      try
       {
-        outfile << tmp.prefix(80) << "\n";
-        tmp.erase(0, 80);
+        seqan::writeRecord(outfile, header, it->sequence.c_str());
       }
-
-      if (tmp.size() > 0)
+      catch(seqan::Exception & /*err*/)
       {
-        outfile << tmp << "\n";
+        throw Exception::IOException(__FILE__, __LINE__, __PRETTY_FUNCTION__, "Error while writing FASTA file entry for id " + it->identifier + " to file " + filename);
       }
     }
-    outfile.close();
   }
-
 } // namespace OpenMS
