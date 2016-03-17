@@ -255,10 +255,13 @@ namespace OpenMS
       }
 
       std::string
-      tmpFileName(const std::string& file, int line)
+      tmpFileName(const std::string& file, int line, const std::string& ending)
       {
         QFileInfo fi(file.c_str());
-        return String(fi.baseName()) + '_' + String(line) + ".tmp";
+        if (ending.empty())
+          return String(fi.baseName()) + '_' + String(line) + ".tmp";
+        else
+          return String(fi.baseName()) + '_' + String(line) + ".tmp." + ending;
       }
 
       void testRealSimilar(const char* /*file*/, int line,

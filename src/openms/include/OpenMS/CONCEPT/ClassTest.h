@@ -82,7 +82,7 @@ namespace OpenMS
 
       /// Creates a temporary file name from the test name and the line
       std::string OPENMS_DLLAPI
-      tmpFileName(const std::string& file, int line);
+      tmpFileName(const std::string& file, int line, const std::string& ending = "");
 
       /// This overload returns true; @c float is a floating point type.
       inline bool OPENMS_DLLAPI
@@ -1136,6 +1136,22 @@ namespace TEST = OpenMS::Internal::ClassTest;
 
  @hideinitializer
  */
+
+#define NEW_TMP_FILE_CUSTOM_ENDING(filename, ending)                                      \
+  {                                                                                       \
+    filename = TEST::tmpFileName(__FILE__, __LINE__, ending);                             \
+    TEST::tmp_file_list.push_back(filename);                                              \
+    {                                                                                     \
+      TEST::initialNewline();                                                             \
+      std__cout << "    creating new temporary filename '"                         \
+                << filename                                                               \
+                << "' (line "                                                             \
+                << __LINE__                                                               \
+                << ")"                                                                    \
+                << std::endl;                                                             \
+    }                                                                                     \
+  }
+
 #define NEW_TMP_FILE(filename)                                                            \
   {                                                                                       \
     filename = TEST::tmpFileName(__FILE__, __LINE__);                                     \

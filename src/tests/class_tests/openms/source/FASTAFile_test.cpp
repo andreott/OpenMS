@@ -171,8 +171,8 @@ END_SECTION
 START_SECTION((void store(const String& filename, const std::vector< FASTAEntry > &data) const))
   vector<FASTAFile::FASTAEntry> data, data2;
   String tmp_filename;
-  NEW_TMP_FILE(tmp_filename);
-  tmp_filename.append(".fasta"); //must be fasta otherwise seqan cannot guess the right format
+  NEW_TMP_FILE_CUSTOM_ENDING(tmp_filename, "fasta")
+  //tmp_filename.append(".fasta"); //must be fasta otherwise seqan cannot guess the right format
   FASTAFile file;
 
   file.load(OPENMS_GET_TEST_DATA_PATH("FASTAFile_test.fasta"),data);
