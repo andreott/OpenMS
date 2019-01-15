@@ -2,7 +2,7 @@
 //                   OpenMS -- Open-Source Mass Spectrometry
 // --------------------------------------------------------------------------
 // Copyright The OpenMS Team -- Eberhard Karls University Tuebingen,
-// ETH Zurich, and Freie Universitaet Berlin 2002-2016.
+// ETH Zurich, and Freie Universitaet Berlin 2002-2018.
 //
 // This software is released under a three-clause BSD license:
 //  * Redistributions of source code must retain the above copyright
@@ -39,11 +39,12 @@
 #include <OpenMS/KERNEL/FeatureMap.h>
 #include <OpenMS/MATH/STATISTICS/StatisticFunctions.h>
 #include <OpenMS/MATH/MISC/MathFunctions.h>
+#include <OpenMS/SYSTEM/File.h>
 #include <OpenMS/SYSTEM/RWrapper.h>
 
 #include <QtCore/QStringList>
 
-#include <stdio.h>
+#include <cstdio>
 
 namespace OpenMS
 {
@@ -65,9 +66,9 @@ namespace OpenMS
     }
   }
 
-  void InternalCalibration::applyTransformation(MSExperiment<>::SpectrumType& spec, const MZTrafoModel& trafo)
+  void InternalCalibration::applyTransformation_(PeakMap::SpectrumType& spec, const MZTrafoModel& trafo)
   {
-    typedef MSExperiment<>::SpectrumType::Iterator SpecIt;
+    typedef PeakMap::SpectrumType::Iterator SpecIt;
 
     // calibrate the spectrum itself
     for (SpecIt it = spec.begin(); it != spec.end(); ++it)
@@ -76,24 +77,29 @@ namespace OpenMS
     }
   }
 
-  void InternalCalibration::applyTransformation(MSExperiment<>& exp, const IntList& target_mslvl, const MZTrafoModel& trafo)
+  void InternalCalibration::applyTransformation(PeakMap::SpectrumType& spec, const IntList& target_mslvl, const MZTrafoModel& trafo)
   {
-    for (MSExperiment<>::Iterator it = exp.begin(); it != exp.end(); ++it)
+    // calibrate the peaks?
+    if (ListUtils::contains(target_mslvl, spec.getMSLevel()))
     {
-      // calibrate the peaks?
-      if (ListUtils::contains(target_mslvl, it->getMSLevel()))
-      {
-        applyTransformation(*it, trafo);
-      }
-      // apply PC correction (only if target is MS1, and current spec is MS2; or target is MS2 and cs is MS3,...)
-      if (ListUtils::contains(target_mslvl, it->getMSLevel() - 1))
-      {
-        applyTransformation(it->getPrecursors(), trafo);
-      }     
+      applyTransformation_(spec, trafo);
+    }
+    // apply PC correction (only if target is MS1, and current spec is MS2; or target is MS2 and cs is MS3,...)
+    if (ListUtils::contains(target_mslvl, spec.getMSLevel() - 1))
+    {
+      applyTransformation(spec.getPrecursors(), trafo);
+    }     
+  }
+
+  void InternalCalibration::applyTransformation(PeakMap& exp, const IntList& target_mslvl, const MZTrafoModel& trafo)
+  {
+    for (PeakMap::Iterator it = exp.begin(); it != exp.end(); ++it)
+    {
+      applyTransformation(*it, target_mslvl, trafo);
     }
   }
 
-  Size InternalCalibration::fillCalibrants(const MSExperiment<> exp,
+  Size InternalCalibration::fillCalibrants(const PeakMap exp,
                                            const std::vector<InternalCalibration::LockMass>& ref_masses,
                                            double tol_ppm,
                                            bool lock_require_mono,
@@ -107,7 +113,7 @@ namespace OpenMS
     // find lock masses in data and build calibrant table
     //
     std::map<Size, Size> stats_cal_per_spectrum;
-    typedef MSExperiment<>::ConstIterator ExpCIt;
+    typedef PeakMap::ConstIterator ExpCIt;
     for (ExpCIt it = exp.begin(); it != exp.end(); ++it)
     {
       // empty spectrum
@@ -249,7 +255,7 @@ namespace OpenMS
     return cal_data_;
   }
 
-  bool InternalCalibration::calibrate(MSExperiment<>& exp, 
+  bool InternalCalibration::calibrate(PeakMap& exp, 
                                       const IntList& target_mslvl,
                                       MZTrafoModel::MODELTYPE model_type,
                                       double rt_chunk,
@@ -259,8 +265,11 @@ namespace OpenMS
                                       const String& file_models,
                                       const String& file_models_plot,
                                       const String& file_residuals,
-                                      const String& file_residuals_plot)
+                                      const String& file_residuals_plot,
+                                      const String& rscript_executable_)
   {
+    QString rscript_executable = rscript_executable_.toQString();
+
     // ensure sorting; required for finding RT ranges and lock masses
     if (!exp.isSorted(true))
     {
@@ -283,17 +292,22 @@ namespace OpenMS
         applyTransformation(exp, target_mslvl, tms[0]);
         hasValidModels = true;
       }
-    } else
+    }
+    else
     { // one model per spectrum (not all might be needed, if certain MS levels are excluded from calibration)
       tms.reserve(exp.size());
       // go through spectra and calibrate
       Size i(0), i_mslvl(0);
-      for (MSExperiment<>::Iterator it = exp.begin(); it != exp.end(); ++it, ++i)
+      for (PeakMap::Iterator it = exp.begin(); it != exp.end(); ++it, ++i)
       {
         setProgress(i);
 
         // skip this MS level?
-        if (!ListUtils::contains(target_mslvl, it->getMSLevel())) continue;
+        if (!(ListUtils::contains(target_mslvl, it->getMSLevel()) ||     // scan m/z needs correction
+              ListUtils::contains(target_mslvl, it->getMSLevel() - 1)))  // precursor m/z needs correction
+        {
+          continue;
+        }
 
         //
         // build model
@@ -306,7 +320,7 @@ namespace OpenMS
         }
         else
         {
-          applyTransformation(*it, tms.back());
+          applyTransformation(*it, target_mslvl, tms.back());
         }
         ++i_mslvl;
       } // MSExp::iter
@@ -345,18 +359,28 @@ namespace OpenMS
           {
             model_index = p + dist_right;
           }
-          applyTransformation(exp[it->second], tms[model_index]);
+          applyTransformation(exp[it->second], target_mslvl, tms[model_index]);
           tms_new[p].setCoefficients(tms[model_index]); // overwrite invalid model
         }
         tms_new.swap(tms);
         // consistency check: all models must be valid at this point
-        for (Size i = 0; i < tms.size(); ++i) if (!MZTrafoModel::isValidModel(tms[i])) throw Exception::InvalidValue(__FILE__, __LINE__, __PRETTY_FUNCTION__, "InternalCalibration::calibrate(): Internal error. Not all models are valid!", String(i));
+        for (Size i = 0; i < tms.size(); ++i) if (!MZTrafoModel::isValidModel(tms[i])) throw Exception::InvalidValue(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, "InternalCalibration::calibrate(): Internal error. Not all models are valid!", String(i));
       }
     }
     endProgress();
 
+    // check if Rscript is available
+    if (!file_models_plot.empty() || !file_residuals_plot.empty())
+    {
+      if (!RWrapper::findR(rscript_executable, true))
+      {
+        LOG_ERROR << "The R interpreter is required to create PNG plot files. To avoid the error, either do not request 'quality_control:*_plot' (not recommended) or fix your R installation." << std::endl;
+        return false;
+      }
+    }
+
     //
-    // show the model parameters
+    // write the model parameters to file and/or plot them
     //
     if (!file_models.empty() || !file_models_plot.empty())
     {
@@ -379,8 +403,9 @@ namespace OpenMS
       // plot it
       if (!file_models_plot.empty())
       {
-        if (!RWrapper::runScript("InternalCalibration_Models.R", QStringList() << out_table.toQString() << file_models_plot.toQString()))
+        if (!RWrapper::runScript("InternalCalibration_Models.R", QStringList() << out_table.toQString() << file_models_plot.toQString(), rscript_executable))
         {
+          LOG_ERROR << "R script failed. To avoid the error, either disable the creation of 'quality_control:models_plot' (not recommended) or fix your R installation." << std::endl;
           return false;
         }
       }
@@ -391,7 +416,7 @@ namespace OpenMS
     // plot the residual error (after calibration)
     // go through Calibration data points
     //
-    SVOutStream* sv = NULL;      
+    SVOutStream* sv = nullptr;      
     String out_table_residuals;
     if (!file_residuals.empty() || !file_residuals_plot.empty())
     {
@@ -402,7 +427,7 @@ namespace OpenMS
     std::vector<double> vec_ppm_before, vec_ppm_after;
     vec_ppm_before.reserve(cal_data_.size());
     vec_ppm_after.reserve(cal_data_.size());
-    if (sv != NULL) *sv << "# residual error after calibration" << nl
+    if (sv != nullptr) *sv << "# residual error after calibration" << nl
                         << "RT" << "intensity" << "mz ref" << "mz before" << "mz after" << "ppm before" << "ppm after" << nl;
     Size ii(0);
     for (CalibrationData::const_iterator itc = cal_data_.begin(); itc != cal_data_.end(); ++itc, ++ii)
@@ -418,7 +443,7 @@ namespace OpenMS
       double ppm_after = Math::getPPM(mz_corrected, mz_ref);
       vec_ppm_before.push_back(ppm_before);
       vec_ppm_after.push_back(ppm_after);
-      if (sv != NULL)
+      if (sv != nullptr)
       {
         *sv << rt 
             << itc->getIntensity()
@@ -435,8 +460,9 @@ namespace OpenMS
     // plot it
     if (!file_residuals_plot.empty())
     {
-      if (!RWrapper::runScript("InternalCalibration_Residuals.R", QStringList() << out_table_residuals.toQString() << file_residuals_plot.toQString()))
+      if (!RWrapper::runScript("InternalCalibration_Residuals.R", QStringList() << out_table_residuals.toQString() << file_residuals_plot.toQString(), rscript_executable))
       {
+        LOG_ERROR << "R script failed. To avoid the error, either disable the creation of 'quality_control:residuals_plot' (not recommended) or fix your R installation." << std::endl;
         return false;
       }
     }

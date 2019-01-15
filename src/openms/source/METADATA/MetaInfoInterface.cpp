@@ -2,7 +2,7 @@
 //                   OpenMS -- Open-Source Mass Spectrometry
 // --------------------------------------------------------------------------
 // Copyright The OpenMS Team -- Eberhard Karls University Tuebingen,
-// ETH Zurich, and Freie Universitaet Berlin 2002-2016.
+// ETH Zurich, and Freie Universitaet Berlin 2002-2018.
 //
 // This software is released under a three-clause BSD license:
 //  * Redistributions of source code must retain the above copyright
@@ -28,7 +28,7 @@
 // ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 // --------------------------------------------------------------------------
-// $Maintainer: Andreas Bertsch $
+// $Maintainer: Timo Sachsenberg $
 // $Authors: Marc Sturm $
 // --------------------------------------------------------------------------
 
@@ -40,21 +40,26 @@ namespace OpenMS
 {
 
   MetaInfoInterface::MetaInfoInterface() :
-    meta_(0)
+    meta_(nullptr)
   {
-
   }
 
-  MetaInfoInterface::MetaInfoInterface(const MetaInfoInterface & rhs)
+  /// Copy constructor
+  MetaInfoInterface::MetaInfoInterface(const MetaInfoInterface & rhs) :
+    meta_(nullptr)
   {
-    if (rhs.meta_ != 0)
+    if (rhs.meta_ != nullptr)
     {
       meta_ = new MetaInfo(*(rhs.meta_));
     }
-    else
-    {
-      meta_ = 0;
-    }
+  }
+
+  /// Move constructor
+  MetaInfoInterface::MetaInfoInterface(MetaInfoInterface&& rhs) noexcept :
+    meta_(std::move(rhs.meta_))
+  {
+    // take ownership
+    rhs.meta_ = nullptr;
   }
 
   MetaInfoInterface::~MetaInfoInterface()
@@ -65,22 +70,20 @@ namespace OpenMS
   MetaInfoInterface & MetaInfoInterface::operator=(const MetaInfoInterface & rhs)
   {
     if (this == &rhs)
+    {
       return *this;
+    }
 
-//      std::cout << meta_ << std::endl;
-//      std::cout << rhs.meta_ << std::endl;
-//      std::cout << " " << std::endl;
-
-    if (rhs.meta_ != 0 && meta_ != 0)
+    if (rhs.meta_ != nullptr && meta_ != nullptr)
     {
       *meta_ = *(rhs.meta_);
     }
-    else if (rhs.meta_ == 0 && meta_ != 0)
+    else if (rhs.meta_ == nullptr && meta_ != nullptr)
     {
       delete(meta_);
-      meta_ = 0;
+      meta_ = nullptr;
     }
-    else if (rhs.meta_ != 0 && meta_ == 0)
+    else if (rhs.meta_ != nullptr && meta_ == nullptr)
     {
       meta_ = new MetaInfo(*(rhs.meta_));
     }
@@ -88,20 +91,35 @@ namespace OpenMS
     return *this;
   }
 
+  MetaInfoInterface& MetaInfoInterface::operator=(MetaInfoInterface&& rhs) noexcept
+  {
+    if (this == &rhs)
+    {
+      return *this;
+    }
+
+    // free memory and assign rhs memory
+    delete(meta_);
+    meta_ = rhs.meta_;
+    rhs.meta_ = nullptr;
+
+    return *this;
+  }
+
   bool MetaInfoInterface::operator==(const MetaInfoInterface & rhs) const
   {
-    if (rhs.meta_ == 0 && meta_ == 0)
+    if (rhs.meta_ == nullptr && meta_ == nullptr)
     {
       return true;
     }
-    else if (rhs.meta_ == 0 && meta_ != 0)
+    else if (rhs.meta_ == nullptr && meta_ != nullptr)
     {
       if (meta_->empty())
         return true;
 
       return false;
     }
-    else if (rhs.meta_ != 0 && meta_ == 0)
+    else if (rhs.meta_ != nullptr && meta_ == nullptr)
     {
       if (rhs.meta_->empty())
         return true;
@@ -118,7 +136,7 @@ namespace OpenMS
 
   const DataValue & MetaInfoInterface::getMetaValue(const String & name) const
   {
-    if (meta_ == 0)
+    if (meta_ == nullptr)
     {
       return DataValue::EMPTY;
     }
@@ -127,7 +145,7 @@ namespace OpenMS
 
   const DataValue & MetaInfoInterface::getMetaValue(UInt index) const
   {
-    if (meta_ == 0)
+    if (meta_ == nullptr)
     {
       return DataValue::EMPTY;
     }
@@ -136,7 +154,7 @@ namespace OpenMS
 
   bool MetaInfoInterface::metaValueExists(const String & name) const
   {
-    if (meta_ == 0)
+    if (meta_ == nullptr)
     {
       return false;
     }
@@ -145,7 +163,7 @@ namespace OpenMS
 
   bool MetaInfoInterface::metaValueExists(UInt index) const
   {
-    if (meta_ == 0)
+    if (meta_ == nullptr)
     {
       return false;
     }
@@ -171,7 +189,7 @@ namespace OpenMS
 
   void MetaInfoInterface::createIfNotExists_()
   {
-    if (meta_ == 0)
+    if (meta_ == nullptr)
     {
       meta_ = new MetaInfo();
     }
@@ -179,7 +197,7 @@ namespace OpenMS
 
   void MetaInfoInterface::getKeys(std::vector<String> & keys) const
   {
-    if (meta_ != 0)
+    if (meta_ != nullptr)
     {
       meta_->getKeys(keys);
     }
@@ -187,7 +205,7 @@ namespace OpenMS
 
   void MetaInfoInterface::getKeys(std::vector<UInt> & keys) const
   {
-    if (meta_ != 0)
+    if (meta_ != nullptr)
     {
       meta_->getKeys(keys);
     }
@@ -195,7 +213,7 @@ namespace OpenMS
 
   bool MetaInfoInterface::isMetaEmpty() const
   {
-    if (meta_ == 0)
+    if (meta_ == nullptr)
     {
       return true;
     }
@@ -205,12 +223,12 @@ namespace OpenMS
   void MetaInfoInterface::clearMetaInfo()
   {
     delete meta_;
-    meta_ = 0;
+    meta_ = nullptr;
   }
 
   void MetaInfoInterface::removeMetaValue(const String & name)
   {
-    if (meta_ != 0)
+    if (meta_ != nullptr)
     {
       meta_->removeValue(name);
     }
@@ -218,10 +236,11 @@ namespace OpenMS
 
   void MetaInfoInterface::removeMetaValue(UInt index)
   {
-    if (meta_ != 0)
+    if (meta_ != nullptr)
     {
       meta_->removeValue(index);
     }
   }
 
 } //namespace
+

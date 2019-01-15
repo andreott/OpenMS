@@ -2,7 +2,7 @@
 //                   OpenMS -- Open-Source Mass Spectrometry
 // --------------------------------------------------------------------------
 // Copyright The OpenMS Team -- Eberhard Karls University Tuebingen,
-// ETH Zurich, and Freie Universitaet Berlin 2002-2016.
+// ETH Zurich, and Freie Universitaet Berlin 2002-2018.
 //
 // This software is released under a three-clause BSD license:
 //  * Redistributions of source code must retain the above copyright
@@ -28,20 +28,20 @@
 // ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 // --------------------------------------------------------------------------
-// $Maintainer: Stephan Aiche $
+// $Maintainer: Timo Sachsenberg $
 // $Authors: Marc Sturm, Clemens Groepl $
 // --------------------------------------------------------------------------
 
-#ifndef OPENMS_CONCEPT_CLASSTEST_H
-#define OPENMS_CONCEPT_CLASSTEST_H
+#pragma once
 
 // Avoid OpenMS includes here at all costs
 // When the included headers are changed, *all* tests have to be recompiled!
 // Use the ClassTest class if you need add high-level functionality.
 // Includes in the C-file are ok...
+#include <OpenMS/CONCEPT/PrecisionWrapper.h>
 #include <OpenMS/CONCEPT/Types.h>
-#include <OpenMS/DATASTRUCTURES/DataValue.h>
 #include <OpenMS/CONCEPT/UniqueIdGenerator.h>
+#include <OpenMS/DATASTRUCTURES/DataValue.h>
 #include <OpenMS/DATASTRUCTURES/DateTime.h>
 #include <OpenMS/SYSTEM/File.h>
 #include <OpenMS/OpenMSConfig.h>
@@ -371,10 +371,9 @@ namespace TEST = OpenMS::Internal::ClassTest;
  calling the test program with any arguments (except for <code>-v</code> or
  <code>-V</code>).
 
- The second argument version should take the form "$Id:$".  The actual
- version info will then be filled in by Subversion (the revision control
- system).  If it does not, use "svn help propset" to find out how to include
- "Id" in the property "svn:keywords" for the *_test.cpp file in question.
+ The second argument version should take the form "$Id:$" but is currently
+ deprecated.  Originally, the SVN revision was annotated by the revision 
+ control system.
 
  The #START_TEST macro should be the first one to call in a test program. It
  opens a global <code>try</code> block to catch any unwanted exceptions.  If
@@ -1224,4 +1223,3 @@ namespace TEST = OpenMS::Internal::ClassTest;
 
 //@} // end of ClassTest
 
-#endif //OPENMS_CONCEPT_CLASSTEST_H

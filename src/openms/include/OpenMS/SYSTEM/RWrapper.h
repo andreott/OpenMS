@@ -2,7 +2,7 @@
 //                   OpenMS -- Open-Source Mass Spectrometry
 // --------------------------------------------------------------------------
 // Copyright The OpenMS Team -- Eberhard Karls University Tuebingen,
-// ETH Zurich, and Freie Universitaet Berlin 2002-2016.
+// ETH Zurich, and Freie Universitaet Berlin 2002-2018.
 //
 // This software is released under a three-clause BSD license:
 //  * Redistributions of source code must retain the above copyright
@@ -32,10 +32,11 @@
 // $Authors: Chris Bielow $
 // --------------------------------------------------------------------------
 
-#ifndef OPENMS_SYSTEM_RWRAPPER_H
-#define OPENMS_SYSTEM_RWRAPPER_H
+#pragma once
 
 #include <OpenMS/config.h>
+
+#include <QString>
 
 class QStringList;
 
@@ -74,20 +75,20 @@ public:
     static String findScript(const String& script_file, bool verbose = true);
 
     /**
-      @brief Check for presence of 'Rscript' in system path.
+      @brief Check for presence of 'Rscript'.
 
       @param verbose Print failure information?
       @return Success status
     */
-    static bool findR(bool verbose = true);
+    static bool findR(const QString& executable = QString("Rscript"), bool verbose = true);
 
 
     /**
       @brief Run an R script with certain arguments on the command line
 
       The following checks are done before running the script:
-         1) The script_file is searched in 'OpenMS/share/SCRIPTS' (see findScript()).
-         2) 'Rscript' executable is searched (see findR())
+         1) [optional] 'Rscript' executable is searched (see findR() -- set @p find_R to true)
+         2) The script_file is searched in 'OpenMS/share/SCRIPTS' (see findScript()).
          3) The script is run as $ Rscript <path/to/script> <arg1> <arg2> ...
       
       If any of the above steps fail, an error message is printed and false is returned.
@@ -97,10 +98,12 @@ public:
 
       @param script_file Filename of the R script
       @param cmd_args Command line arguments to the script
+      @param find_R Run findR()? May be skipped if runScript() is run repeatedly
+      @param verbose Print status information; also passed internally to findR() and findScript().
       @return Success status
 
     */
-    static bool runScript(const String& script_file, const QStringList& cmd_args);
+    static bool runScript(const String& script_file, const QStringList& cmd_args, const QString& executable = QString("Rscript"), bool find_R = false, bool verbose = true);
 
   };
 
@@ -108,4 +111,3 @@ public:
 
 
 
-#endif // OPENMS_SYSTEM_RWRAPPER_H

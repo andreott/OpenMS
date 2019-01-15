@@ -2,7 +2,7 @@
 //                   OpenMS -- Open-Source Mass Spectrometry
 // --------------------------------------------------------------------------
 // Copyright The OpenMS Team -- Eberhard Karls University Tuebingen,
-// ETH Zurich, and Freie Universitaet Berlin 2002-2016.
+// ETH Zurich, and Freie Universitaet Berlin 2002-2018.
 //
 // This software is released under a three-clause BSD license:
 //  * Redistributions of source code must retain the above copyright
@@ -28,12 +28,11 @@
 // ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 // --------------------------------------------------------------------------
-// $Maintainer: Nico Pfeifer $
+// $Maintainer: Timo Sachsenberg $
 // $Authors: $
 // --------------------------------------------------------------------------
 
-#ifndef OPENMS_METADATA_PEPTIDEHIT_H
-#define OPENMS_METADATA_PEPTIDEHIT_H
+#pragma once
 
 #include <vector>
 
@@ -50,11 +49,109 @@ namespace OpenMS
 
     It contains the fields score, score_type, rank, and sequence.
 
-        @ingroup Metadata
+    @ingroup Metadata
   */
   class OPENMS_DLLAPI PeptideHit :
     public MetaInfoInterface
   {
+public:
+
+    /**
+   * @brief Contains annotations of a peak
+
+      The mz and intensity values contain the same information as a spectrum
+      would have about the peaks, and can be used to map the additional
+      information to the correct peak or reconstruct the annotated spectrum.
+      Additionally the charge of the peak and an arbitrary string annotation
+      can be stored.
+
+      The string annotation can be e.g. a fragment type like "y3".
+      This information can be used e.g. to label peaks in TOPPView.
+
+      The specific application in OpenProXL uses a more complex syntax to
+      define the larger number of different ion types found in XL-MS data.
+
+      In the example "[alpha|ci$y3-H2O-NH3]" "alpha" or "beta" determines on
+      which of the two peptides the fragmentation occurred, "ci" or "xi"
+      determines whether the cross-link and with it the other peptide is
+      contained in the fragment, and the last part is the ion type with the
+      fragmentation position (index) and losses.  The separators "|" and "$"
+      are used to separate the parts easily when parsing the annotation.
+
+   */
+  struct PeakAnnotation
+  {
+    String annotation;  // e.g. [alpha|ci$y3-H2O-NH3]
+    int charge;
+    double mz;
+    double intensity;
+
+    bool operator<(const PeptideHit::PeakAnnotation& other) const
+    {
+      // sensible to sort first by m/z and charge
+      if (mz < other.mz)
+      {
+        return true;
+      }
+      else if (mz > other.mz)
+      {
+        return false;
+      }
+
+      if (charge < other.charge)
+      {
+        return true;
+      }
+      else if (charge > other.charge)
+      {
+        return false;
+      }
+
+      if (annotation < other.annotation)
+      {
+        return true;
+      }
+      else if (annotation > other.annotation)
+      {
+        return false;
+      }
+
+      if (intensity < other.intensity)
+      {
+        return true;
+      }
+      else if (intensity > other.intensity)
+      {
+        return false;
+      }
+
+      return false;
+    }
+
+    bool operator==(const PeptideHit::PeakAnnotation& other) const
+    {
+      if (charge != other.charge || mz != other.mz ||
+          intensity != other.intensity || annotation != other.annotation) return false;
+      return true;
+    }
+
+    static void writePeakAnnotationsString_(String& annotation_string, std::vector<PeptideHit::PeakAnnotation> annotations)
+    {
+      if (annotations.empty()) { return; }
+
+      // sort by mz, charge, ...
+      stable_sort(annotations.begin(), annotations.end());
+
+      String val;
+      for (auto& a : annotations)
+      {
+        annotation_string += String(a.mz) + "," + String(a.intensity) + "," + String(a.charge) + "," + String(a.annotation).quote();
+        if (&a != &annotations.back()) { annotation_string += "|"; }
+      }
+    }
+
+  };
+
 public:
 
     /// @name Comparators for PeptideHit and ProteinHit
@@ -96,6 +193,19 @@ public:
     };
     //@}
 
+
+    /// Lesser predicate for (modified) sequence of hits
+    class OPENMS_DLLAPI SequenceLessComparator
+    {
+      template <typename Arg>
+      bool operator()(const Arg& a, const Arg& b)
+      {
+        if (a.getSequence().toString() < b.getSequence().toString()) return true;
+        return false;
+      }
+    };
+    //@}
+
     /// Analysis Result (containing search engine / prophet results)
     class OPENMS_DLLAPI PepXMLAnalysisResult
     {
@@ -107,44 +217,40 @@ public:
 
       bool operator==(const PepXMLAnalysisResult& rhs) const
       {
-        return score_type == rhs.score_type 
+        return score_type == rhs.score_type
           && higher_is_better == rhs.higher_is_better
           && main_score == rhs.main_score
           && sub_scores == rhs.sub_scores;
       }
-
-      PepXMLAnalysisResult& operator=(const PepXMLAnalysisResult& source)
-      {
-        if (this == &source) return *this;
-        score_type = source.score_type;
-        higher_is_better = source.higher_is_better;
-        main_score = source.main_score;
-        sub_scores = source.sub_scores;
-        return *this;
-      }
-
     };
 
     /** @name Constructors and Destructor */
     //@{
-    /// default constructor
+
+    /// Default constructor
     PeptideHit();
 
-    /// values constructor
+    /// Values constructor
     PeptideHit(double score,
                UInt rank,
                Int charge,
                const AASequence& sequence);
 
-    /// copy constructor
+    /// Copy constructor
     PeptideHit(const PeptideHit& source);
 
-    /// destructor
+    /// Move constructor
+    PeptideHit(PeptideHit&&) noexcept;
+
+    /// Destructor
     virtual ~PeptideHit();
     //@}
 
-    /// assignment operator
+    /// Assignment operator
     PeptideHit& operator=(const PeptideHit& source);
+
+    /// Move assignment operator
+    PeptideHit& operator=(PeptideHit&&) noexcept;
 
     /// Equality operator
     bool operator==(const PeptideHit& rhs) const;
@@ -196,10 +302,17 @@ public:
 
     /// sets the PSM rank
     void setRank(UInt newrank);
+
+    /// returns the fragment annotations
+    std::vector<PeptideHit::PeakAnnotation> getPeakAnnotations() const;
+
+    /// sets the fragment annotations
+    void setPeakAnnotations(std::vector<PeptideHit::PeakAnnotation> frag_annotations);
+
     //@}
 
     /// extracts the set of non-empty protein accessions from peptide evidences
-    std::set<String> extractProteinAccessions() const;
+    std::set<String> extractProteinAccessionsSet() const;
 
 protected:
     AASequence sequence_;
@@ -218,8 +331,9 @@ protected:
 
     /// information on the potential peptides observed through this PSM.
     std::vector<PeptideEvidence> peptide_evidences_;
+
+    /// annotations of fragments in the corresponding spectrum
+    std::vector<PeptideHit::PeakAnnotation> fragment_annotations_;
   };
 
 } // namespace OpenMS
-
-#endif // OPENMS_METADATA_PEPTIDEHIT_H

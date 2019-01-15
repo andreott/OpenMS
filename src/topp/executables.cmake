@@ -3,12 +3,13 @@ set(directory source/APPLICATIONS/TOPP)
 
 ### list all filenames of the directory here
 set(TOPP_executables
-AdditiveSeries
 BaselineFilter
+CometAdapter
 CompNovo
 CompNovoCID
 ConsensusID
 ConsensusMapNormalizer
+CruxAdapter
 Decharger
 DTAExtractor
 EICExtractor
@@ -22,6 +23,7 @@ FeatureFinderMRM
 FeatureFinderMultiplex
 FeatureLinkerLabeled
 FeatureLinkerUnlabeled
+FeatureLinkerUnlabeledKD
 FeatureLinkerUnlabeledQT
 FidoAdapter
 FileConverter
@@ -29,6 +31,7 @@ FileFilter
 FileInfo
 FileMerger
 GenericWrapper
+GNPSExport
 HighResPrecursorMassCorrector
 IDConflictResolver
 IDFileConverter
@@ -42,7 +45,6 @@ InclusionExclusionListCreator
 InspectAdapter
 InternalCalibration
 IsobaricAnalyzer
-ITRAQAnalyzer
 LuciphorAdapter
 MapAlignerIdentification
 MapAlignerPoseClustering
@@ -50,6 +52,7 @@ MapAlignerSpectrum
 MapNormalizer
 MapRTTransformer
 MapStatistics
+MaRaClusterAdapter
 MascotAdapter
 MascotAdapterOnline
 MassTraceExtractor
@@ -71,6 +74,7 @@ PeakPickerHiRes
 PeakPickerWavelet
 PepNovoAdapter
 PeptideIndexer
+PercolatorAdapter
 PhosphoScoring
 PrecursorIonSelector
 PrecursorMassCorrector
@@ -94,7 +98,6 @@ SpectraFilterThresholdMower
 SpectraFilterWindowMower
 SpectraMerger
 TextExporter
-TMTAnalyzer
 TOFCalibration
 XTandemAdapter
 )

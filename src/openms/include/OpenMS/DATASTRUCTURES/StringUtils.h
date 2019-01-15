@@ -2,7 +2,7 @@
 //                   OpenMS -- Open-Source Mass Spectrometry
 // --------------------------------------------------------------------------
 // Copyright The OpenMS Team -- Eberhard Karls University Tuebingen,
-// ETH Zurich, and Freie Universitaet Berlin 2002-2016.
+// ETH Zurich, and Freie Universitaet Berlin 2002-2018.
 //
 // This software is released under a three-clause BSD license:
 //  * Redistributions of source code must retain the above copyright
@@ -28,12 +28,11 @@
 // ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 // --------------------------------------------------------------------------
-// $Maintainer: Stephan Aiche, Chris Bielow $
+// $Maintainer: Timo Sachsenberg, Chris Bielow $
 // $Authors: Marc Sturm, Stephan Aiche, Chris Bielow $
 // --------------------------------------------------------------------------
 
-#ifndef OPENMS_DATASTRUCTURES_STRINGUTILS_H
-#define OPENMS_DATASTRUCTURES_STRINGUTILS_H
+#pragma once
 
 #include <OpenMS/CONCEPT/Types.h>
 #include <OpenMS/DATASTRUCTURES/String.h>
@@ -125,7 +124,7 @@ namespace OpenMS
     {
       String res;
       size_t count = 0;
-      while (count < length && *(s + count) != 0)
+      while (count < length)
       {
         res += *(s + count);
         ++count;
@@ -262,7 +261,7 @@ public:
     {
       if (length > this_s.size())
       {
-        throw Exception::IndexOverflow(__FILE__, __LINE__, __PRETTY_FUNCTION__, length, this_s.size());
+        throw Exception::IndexOverflow(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, length, this_s.size());
       }
       return this_s.substr(0, length);
     }
@@ -271,7 +270,7 @@ public:
     {
       if (length > this_s.size())
       {
-        throw Exception::IndexOverflow(__FILE__, __LINE__, __PRETTY_FUNCTION__, length, this_s.size());
+        throw Exception::IndexOverflow(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, length, this_s.size());
       }
       return this_s.substr(this_s.size() - length, length);
     }
@@ -280,11 +279,11 @@ public:
     {
       if (length < 0)
       {
-        throw Exception::IndexUnderflow(__FILE__, __LINE__, __PRETTY_FUNCTION__, length, 0);
+        throw Exception::IndexUnderflow(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, length, 0);
       }
       if (length > Int(this_s.size()))
       {
-        throw Exception::IndexOverflow(__FILE__, __LINE__, __PRETTY_FUNCTION__, length, this_s.size());
+        throw Exception::IndexOverflow(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, length, this_s.size());
       }
       return this_s.substr(0, length);
     }
@@ -293,11 +292,11 @@ public:
     {
       if (length < 0)
       {
-        throw Exception::IndexUnderflow(__FILE__, __LINE__, __PRETTY_FUNCTION__, length, 0);
+        throw Exception::IndexUnderflow(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, length, 0);
       }
       if (length > Int(this_s.size()))
       {
-        throw Exception::IndexOverflow(__FILE__, __LINE__, __PRETTY_FUNCTION__, length, this_s.size());
+        throw Exception::IndexOverflow(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, length, this_s.size());
       }
       return this_s.substr(this_s.size() - length, length);
     }
@@ -307,7 +306,7 @@ public:
       Size pos = this_s.find(delim);
       if (pos == std::string::npos) //char not found
       {
-        throw Exception::ElementNotFound(__FILE__, __LINE__, __PRETTY_FUNCTION__,
+        throw Exception::ElementNotFound(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
                                          String(delim));
       }
       return this_s.substr(0, pos);
@@ -318,7 +317,7 @@ public:
       Size pos = this_s.rfind(delim);
       if (pos == std::string::npos) //char not found
       {
-        throw Exception::ElementNotFound(__FILE__, __LINE__, __PRETTY_FUNCTION__,
+        throw Exception::ElementNotFound(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
                                          String(delim));
       }
       return this_s.substr(++pos);
@@ -397,7 +396,7 @@ public:
       if ((this_s.size() < 2) || (this_s[0] != q) || (this_s[this_s.size() - 1] != q))
       {
         throw Exception::ConversionError(
-                __FILE__, __LINE__, __PRETTY_FUNCTION__,
+                __FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
                 "'" + this_s + "' does not have the expected format of a quoted string");
       }
       this_s.std::string::operator=(this_s.substr(1, this_s.size() - 2)); // remove quotation marks
@@ -439,7 +438,7 @@ public:
 
     static String random(UInt length)
     {
-      srand(time(0));
+      srand(time(nullptr));
       String tmp(length, '.');
       size_t random;
       for (Size i = 0; i < length; ++i)
@@ -511,7 +510,7 @@ public:
             { // block has start or end quote, but not both
               // (one quote is somewhere in the middle)
               throw Exception::ConversionError(
-                      __FILE__, __LINE__, __PRETTY_FUNCTION__,
+                      __FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
                       String("Could not dequote string '") + block +
                       "' due to wrongly placed '\"'.");
             }
@@ -538,7 +537,7 @@ public:
         { // block has start or end quote but not both
           // (one quote is somewhere in the middle)
           throw Exception::ConversionError(
-                  __FILE__, __LINE__, __PRETTY_FUNCTION__,
+                  __FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
                   String("Could not dequote string '") + block +
                   "' due to wrongly placed '\"'.");
         }
@@ -661,7 +660,7 @@ public:
       if (in_quote) // reached end without finding closing quotation mark
       {
         throw Exception::ConversionError(
-                __FILE__, __LINE__, __PRETTY_FUNCTION__,
+                __FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
                 "unbalanced quotation marks in string '" + this_s + "'");
       }
       substrings.push_back(this_s.substr(start, this_s.size() - start));
@@ -682,12 +681,12 @@ public:
       String::ConstIterator it = this_s.begin();
       if (!boost::spirit::qi::phrase_parse(it, this_s.end(), boost::spirit::qi::int_, boost::spirit::ascii::space, ret))
       {
-        throw Exception::ConversionError(__FILE__, __LINE__, __PRETTY_FUNCTION__, String("Could not convert string '") + this_s + "' to an integer value");
+        throw Exception::ConversionError(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, String("Could not convert string '") + this_s + "' to an integer value");
       }
       // was the string parsed (white spaces are skipped automatically!) completely? If not, we have a problem because a previous split might have used the wrong split char
       if (it != this_s.end())
       {
-        throw Exception::ConversionError(__FILE__, __LINE__, __PRETTY_FUNCTION__, String("Prefix of string '") + this_s + "' successfully converted to an integer value. Additional characters found at position " + (int)(distance(this_s.begin(), it) + 1));
+        throw Exception::ConversionError(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, String("Prefix of string '") + this_s + "' successfully converted to an integer value. Additional characters found at position " + (int)(distance(this_s.begin(), it) + 1));
       }
       return ret;
     }
@@ -701,12 +700,12 @@ public:
       String::ConstIterator it = this_s.begin();
       if (!boost::spirit::qi::phrase_parse(it, this_s.end(), parse_float_, boost::spirit::ascii::space, ret))
       {
-        throw Exception::ConversionError(__FILE__, __LINE__, __PRETTY_FUNCTION__, String("Could not convert string '") + this_s + "' to a float value");
+        throw Exception::ConversionError(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, String("Could not convert string '") + this_s + "' to a float value");
       }
       // was the string parsed (white spaces are skipped automatically!) completely? If not, we have a problem because a previous split might have used the wrong split char
       if (it != this_s.end())
       {
-        throw Exception::ConversionError(__FILE__, __LINE__, __PRETTY_FUNCTION__, String("Prefix of string '") + this_s + "' successfully converted to a float value. Additional characters found at position " + (int)(distance(this_s.begin(), it) + 1));
+        throw Exception::ConversionError(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, String("Prefix of string '") + this_s + "' successfully converted to a float value. Additional characters found at position " + (int)(distance(this_s.begin(), it) + 1));
       }
       return ret;
     }
@@ -719,12 +718,12 @@ public:
       String::ConstIterator it = this_s.begin();
       if (!boost::spirit::qi::phrase_parse(it, this_s.end(), parse_double_, boost::spirit::ascii::space, ret))
       {
-        throw Exception::ConversionError(__FILE__, __LINE__, __PRETTY_FUNCTION__, String("Could not convert string '") + this_s + "' to a double value");
+        throw Exception::ConversionError(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, String("Could not convert string '") + this_s + "' to a double value");
       }
       // was the string parsed (white spaces are skipped automatically!) completely? If not, we have a problem because a previous split might have used the wrong split char
       if (it != this_s.end())
       {
-        throw Exception::ConversionError(__FILE__, __LINE__, __PRETTY_FUNCTION__, String("Prefix of string '") + this_s + "' successfully converted to a double value. Additional characters found at position " + (int)(distance(this_s.begin(), it) + 1));
+        throw Exception::ConversionError(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, String("Prefix of string '") + this_s + "' successfully converted to a double value. Additional characters found at position " + (int)(distance(this_s.begin(), it) + 1));
       }
       return ret;
     }
@@ -781,31 +780,30 @@ public:
     return this_s;
   }
 
-  static String& removeWhitespaces(String & this_s)
+  static String& removeWhitespaces(String& this_s)
   {
-    bool contains_ws = false;
-    for (std::string::const_iterator it = this_s.begin(); it != this_s.end(); ++it)
+    std::string::const_iterator it = this_s.begin();
+    std::string::iterator dest = this_s.begin();
+    std::string::const_iterator it_end = this_s.end();
+    bool has_spaces(false);
+    while (it != it_end)
     {
-      char c = *it;
+      const char c = *it;
       if (c == ' ' || c == '\t' || c == '\n' || c == '\r')
       {
-        contains_ws = true;
-        break;
+        ++it;
+        has_spaces = true;
+        continue; // no need to copy a whitespace
       }
+      // copy to the left, if we had a whitespace before
+      if (has_spaces) *dest = *it;
+      // advance both
+      ++dest;
+      ++it;
     }
 
-    if (contains_ws)
-    {
-      std::string tmp;
-      tmp.reserve(this_s.size());
-      for (std::string::const_iterator it = this_s.begin(); it != this_s.end(); ++it)
-      {
-        char c = *it;
-        if (c != ' ' && c != '\t' && c != '\n' && c != '\r')
-          tmp += c;
-      }
-      this_s.swap(tmp);
-    }
+    // shorten result
+    if (has_spaces) this_s.resize(dest - this_s.begin());
 
     return this_s;
   }
@@ -863,4 +861,3 @@ public:
 
 } // namespace OPENMS
 
-#endif // OPENMS_DATASTRUCTURES_STRINGUTILS_H

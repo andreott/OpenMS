@@ -2,7 +2,6 @@ from libcpp cimport bool
 from Types cimport *
 from BaseFeature cimport *
 from Peak2D cimport *
-from RichPeak2D cimport *
 from UniqueIdInterface cimport *
 from FeatureMap cimport *
 from BaseFeature cimport *
@@ -18,6 +17,16 @@ cdef extern from "<OpenMS/KERNEL/ConsensusFeature.h>" namespace "OpenMS":
         # wrap-inherits:
         #    UniqueIdInterface
         #    Peak2D
+        #
+        # wrap-doc:
+        #   A consensus feature spanning multiple LC-MS/MS experiments.
+        #   -----
+        #   A ConsensusFeature represents analytes that have been
+        #   quantified across multiple LC-MS/MS experiments. Each analyte in a
+        #   ConsensusFeature is linked to its original LC-MS/MS run through a
+        #   unique identifier.
+        #   -----
+        #   Get access to the underlying features through getFeatureList()
 
         ConsensusFeature() nogil except +
         ConsensusFeature(ConsensusFeature &) nogil except +
@@ -29,9 +38,9 @@ cdef extern from "<OpenMS/KERNEL/ConsensusFeature.h>" namespace "OpenMS":
         void computeMonoisotopicConsensus()    nogil except +
         void computeDechargeConsensus(FeatureMap, bool)    nogil except +
 
-        void insert(UInt64, Peak2D, UInt64) nogil except +
-        void insert(UInt64, BaseFeature) nogil except +
-        void insert(UInt64, ConsensusFeature) nogil except +
+        void insert(UInt64 map_idx, Peak2D, UInt64 element_idx) nogil except +
+        void insert(UInt64 map_idx, BaseFeature) nogil except +
+        void insert(UInt64 map_idx, ConsensusFeature) nogil except +
 
         float getQuality()  nogil except +
         void setQuality(float q) nogil except +
@@ -90,5 +99,3 @@ cdef extern from "<OpenMS/KERNEL/ConsensusFeature.h>" namespace "OpenMS::Consens
       String denominator_ref_
       String numerator_ref_
       libcpp_vector[String] description_
-
-

@@ -2,7 +2,7 @@
 //                   OpenMS -- Open-Source Mass Spectrometry
 // --------------------------------------------------------------------------
 // Copyright The OpenMS Team -- Eberhard Karls University Tuebingen,
-// ETH Zurich, and Freie Universitaet Berlin 2002-2016.
+// ETH Zurich, and Freie Universitaet Berlin 2002-2018.
 //
 // This software is released under a three-clause BSD license:
 //  * Redistributions of source code must retain the above copyright
@@ -32,8 +32,7 @@
 // $Authors: Andreas Bertsch, Chris Bielow $
 // --------------------------------------------------------------------------
 
-#ifndef OPENMS_FORMAT_MASCOTGENERICFILE_H
-#define OPENMS_FORMAT_MASCOTGENERICFILE_H
+#pragma once
 
 #include <OpenMS/DATASTRUCTURES/String.h>
 #include <OpenMS/SYSTEM/File.h>
@@ -69,10 +68,10 @@ public:
     MascotGenericFile();
 
     /// destructor
-    virtual ~MascotGenericFile();
+    ~MascotGenericFile() override;
 
     /// docu in base class
-    virtual void updateMembers_();
+    void updateMembers_() override;
 
     /// stores the experiment data in a MascotGenericFile that can be used as input for MASCOT shell execution (optionally a compact format is used: no zero-intensity peaks, limited number of decimal places)
     void store(const String& filename, const PeakMap& experiment, 
@@ -94,7 +93,7 @@ public:
     {
       if (!File::exists(filename))
       {
-        throw Exception::FileNotFound(__FILE__, __LINE__, __PRETTY_FUNCTION__, filename);
+        throw Exception::FileNotFound(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, filename);
       }
 
       exp.reset();
@@ -150,7 +149,7 @@ protected:
     void writeHeader_(std::ostream& os);
 
     /// writes the spectrum
-    void writeSpectrum_(std::ostream& os, const PeakSpectrum& spec, const String& filename);
+    void writeSpectrum_(std::ostream& os, const PeakSpectrum& spec, const String& filename, const String& native_id_type_accession);
 
     /// writes the MSExperiment
     void writeMSExperiment_(std::ostream& os, const String& filename, const PeakMap& experiment);
@@ -207,13 +206,13 @@ protected:
                   }
                   catch (Exception::ConversionError& /*e*/)
                   {
-                    throw Exception::ParseError(__FILE__, __LINE__, __PRETTY_FUNCTION__, "The content '" + line + "' at line #" + String(line_number) + " could not be converted to a number! Expected two (m/z int) or three (m/z int charge) numbers separated by whitespace (space or tab).", "");
+                    throw Exception::ParseError(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, "The content '" + line + "' at line #" + String(line_number) + " could not be converted to a number! Expected two (m/z int) or three (m/z int charge) numbers separated by whitespace (space or tab).", "");
                   }
                   spectrum.push_back(p);
                 }
                 else
                 {
-                  throw Exception::ParseError(__FILE__, __LINE__, __PRETTY_FUNCTION__, "The content '" + line + "' at line #" + String(line_number) + " does not contain m/z and intensity values separated by whitespace (space or tab)!", "");
+                  throw Exception::ParseError(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, "The content '" + line + "' at line #" + String(line_number) + " does not contain m/z and intensity values separated by whitespace (space or tab)!", "");
                 }
               }
               while (getline(is, line, '\n') && ++line_number && line.trim() != "END IONS"); // line.trim() is important here!
@@ -224,7 +223,7 @@ protected:
               }
               else
               {
-                throw Exception::ParseError(__FILE__, __LINE__, __PRETTY_FUNCTION__, "Reached end of file. Found \"BEGIN IONS\" but not the corresponding \"END IONS\"!", "");
+                throw Exception::ParseError(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, "Reached end of file. Found \"BEGIN IONS\" but not the corresponding \"END IONS\"!", "");
               }
             }
             else if (line.hasPrefix("PEPMASS")) // parse precursor position
@@ -244,7 +243,7 @@ protected:
               }
               else
               {
-                throw Exception::ParseError(__FILE__, __LINE__, __PRETTY_FUNCTION__, "Cannot parse PEPMASS in '" + line + "' at line #" + String(line_number) + " (expected 1 or 2 entries, but " + String(split.size()) + " were present)!", "");
+                throw Exception::ParseError(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, "Cannot parse PEPMASS in '" + line + "' at line #" + String(line_number) + " (expected 1 or 2 entries, but " + String(split.size()) + " were present)!", "");
               }
             }
             else if (line.hasPrefix("CHARGE"))
@@ -315,4 +314,3 @@ protected:
 
 } // namespace OpenMS
 
-#endif // OPENMS_FORMAT_MASCOTGENERICFILE_H

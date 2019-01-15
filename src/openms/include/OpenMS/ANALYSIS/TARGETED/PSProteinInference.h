@@ -2,7 +2,7 @@
 //                   OpenMS -- Open-Source Mass Spectrometry
 // --------------------------------------------------------------------------
 // Copyright The OpenMS Team -- Eberhard Karls University Tuebingen,
-// ETH Zurich, and Freie Universitaet Berlin 2002-2016.
+// ETH Zurich, and Freie Universitaet Berlin 2002-2018.
 //
 // This software is released under a three-clause BSD license:
 //  * Redistributions of source code must retain the above copyright
@@ -28,13 +28,12 @@
 // ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 // --------------------------------------------------------------------------
-// $Maintainer: Alexandra Zerck $
+// $Maintainer: Timo Sachsenberg $
 // $Authors: Alexandra Zerck $
 // --------------------------------------------------------------------------
 //
 
-#ifndef OPENMS_ANALYSIS_TARGETED_PSPROTEININFERENCE_H
-#define OPENMS_ANALYSIS_TARGETED_PSPROTEININFERENCE_H
+#pragma once
 
 #include <OpenMS/METADATA/PeptideIdentification.h>
 #include <OpenMS/DATASTRUCTURES/LPWrapper.h>
@@ -92,4 +91,3 @@ private:
 
 
 
-#endif // #ifndef OPENMS_ANALYSIS_TARGETED_PSPROTEININFERENCE_H

@@ -2,7 +2,7 @@
 //                   OpenMS -- Open-Source Mass Spectrometry
 // --------------------------------------------------------------------------
 // Copyright The OpenMS Team -- Eberhard Karls University Tuebingen,
-// ETH Zurich, and Freie Universitaet Berlin 2002-2016.
+// ETH Zurich, and Freie Universitaet Berlin 2002-2018.
 //
 // This software is released under a three-clause BSD license:
 //  * Redistributions of source code must retain the above copyright
@@ -28,7 +28,7 @@
 // ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 // --------------------------------------------------------------------------
-// $Maintainer: Petra Gutenbrunner $
+// $Maintainer: Petra Gutenbrunner, Oliver Alka $
 // $Authors: Petra Gutenbrunner $
 // --------------------------------------------------------------------------
 
@@ -42,13 +42,12 @@
 #include <OpenMS/FORMAT/FileTypes.h>
 #include <OpenMS/FORMAT/IdXMLFile.h>
 #include <OpenMS/FORMAT/PepXMLFile.h>
+#include <OpenMS/FORMAT/MzMLFile.h>
 #include <OpenMS/KERNEL/StandardTypes.h>
 #include <OpenMS/SYSTEM/File.h>
 #include <OpenMS/SYSTEM/JavaInfo.h>
 
-#include <QtCore/QFile>
-#include <QtCore/QProcess>
-#include <QDir>
+#include <QProcessEnvironment>
 
 #include <cstddef>
 #include <fstream>
@@ -124,7 +123,7 @@ protected:
   // lists of allowed parameter values:
   vector<String> fragment_methods_, fragment_error_units_, score_selection_method_;
 
-  void registerOptionsAndFlags_()
+  void registerOptionsAndFlags_() override
   {
     registerInputFile_("in", "<file>", "", "Input spectrum file");
     setValidFormats_("in", ListUtils::create<String>("mzML"));
@@ -132,9 +131,9 @@ protected:
     registerInputFile_("id", "<file>", "", "Protein/peptide identifications file");
     setValidFormats_("id", ListUtils::create<String>("idXML"));
 
-    registerOutputFile_("out", "<file>", "", "Output file", false);
+    registerOutputFile_("out", "<file>", "", "Output file");
     setValidFormats_("out", ListUtils::create<String>("idXML"));
-    
+
     registerInputFile_("executable", "<file>", "luciphor2.jar", "LuciPHOr2 .jar file, e.g. 'c:\\program files\\luciphor2.jar'", true, false, ListUtils::create<String>("skipexists"));
 
     registerStringOption_("fragment_method", "<choice>", fragment_methods_[0], "Fragmentation method", false);
@@ -180,6 +179,11 @@ protected:
 
     registerStringOption_("run_mode", "<choice>", "0", "Determines how Luciphor will run: 0 = calculate FLR then rerun scoring without decoys (two iterations), 1 = Report Decoys: calculate FLR but don't rescore PSMs, all decoy hits will be reported", false);
     setValidStrings_("run_mode", ListUtils::create<String>("0,1")); 
+    
+    registerInputFile_("java_executable", "<file>", "java", "The Java executable. Usually Java is on the system PATH. If Java is not found, use this parameter to specify the full path to Java", false, false, ListUtils::create<String>("skipexists"));
+
+    registerIntOption_("java_memory", "<num>", 3500, "Maximum Java heap size (in MB)", false);
+    registerIntOption_("java_permgen", "<num>", 0, "Maximum Java permanent generation space (in MB); only for Java 7 and below", false, true);
   }
   
   String makeModString_(const String& mod_name)
@@ -271,21 +275,6 @@ protected:
     output << "               ## 4 = write HCD non-parametric models to disk (HCD-mode only option)\n";
   }
   
-  void removeTempDir_(const String& temp_dir)
-  {
-    if (temp_dir.empty()) return; // no temp. dir. created
-
-    if (debug_level_ >= 2)
-    {
-      writeDebug_("Keeping temporary files in directory '" + temp_dir + "'. Set debug level to 1 or lower to remove them.", 2);
-    }
-    else
-    {
-      if (debug_level_ == 1) writeDebug_("Deleting temporary directory '" + temp_dir + "'. Set debug level to 2 or higher to keep it.", 1);
-      File::removeDirRecursively(temp_dir);
-    }
-  }
-  
   struct LuciphorPSM splitSpecId_(const String& spec_id)
   {
     struct LuciphorPSM l_psm;
@@ -364,8 +353,8 @@ protected:
     }    
     return "";
     
-    String msg = "Spectrum could not be parsed";
-    throw Exception::ParseError(__FILE__, __LINE__, __PRETTY_FUNCTION__, spec_id, msg);
+    // String msg = "Spectrum could not be parsed";
+    // throw Exception::ParseError(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, spec_id, msg);
   }
   
   // remove all modifications which are LuciPHOr2 target modifications,
@@ -381,11 +370,11 @@ protected:
     // set C-term/N-term modification
     if (original_seq.hasNTerminalModification())
     {
-      seq_converted.setNTerminalModification(original_seq.getNTerminalModification());
+      seq_converted.setNTerminalModification(original_seq.getNTerminalModificationName());
     }
     if (original_seq.hasCTerminalModification())
     {
-      seq_converted.setCTerminalModification(original_seq.getCTerminalModification());
+      seq_converted.setCTerminalModification(original_seq.getCTerminalModificationName());
     }
     
     // set all modifications, which were not changed by LuciPHOr2
@@ -393,7 +382,7 @@ protected:
     {
       if (original_seq.getResidue(i).isModified())
       {
-        String mod = original_seq.getResidue(i).getModification();
+        String mod = original_seq.getResidue(i).getModificationName();
         
         // no target modification, modification can be set
         bool found = false;
@@ -426,7 +415,7 @@ protected:
         {
           if (seq.getResidue(i).isModified())
           {
-            writeLog_("Error: ambiguous modifications on AA '" + iter->first + "' (" + seq.getResidue(i).getModification() + ", " + iter->second + ")");
+            writeLog_("Error: ambiguous modifications on AA '" + iter->first + "' (" + seq.getResidue(i).getModificationName() + ", " + iter->second + ")");
             return PARSE_ERROR;
           }
           else 
@@ -472,21 +461,19 @@ protected:
     else
     {
       String msg = "SELECTION_METHOD parameter could not be set. Only Mascot, X! Tandem, or Posterior Error Probability score types are supported.";
-      throw Exception::RequiredParameterNotGiven(__FILE__, __LINE__, __PRETTY_FUNCTION__, msg);
+      throw Exception::RequiredParameterNotGiven(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, msg);
     }
     return selection_method;
   }
   
-  ExitCodes main_(int, const char**)
+  ExitCodes main_(int, const char**) override
   {
-    vector<PeptideIdentification> pep_ids;
-    vector<ProteinIdentification> prot_ids;
-    
+    String java_executable = getStringOption_("java_executable");
     if (!getFlag_("force"))
     {
-      if (!JavaInfo::canRun("java"))
+      if (!JavaInfo::canRun(java_executable))
       {
-        writeLog_("Fatal error: Java not found, or the Java process timed out. Java is needed to run LuciPHOr2. Make sure that it can be executed by calling 'java', e.g. add the directory containing the Java binary to your PATH variable. If you are certain java is installed, please set the 'force' flag in order to avoid this error message.");
+        writeLog_("Fatal error: Java is needed to run LuciPHOr2!");
         return EXTERNAL_PROGRAM_ERROR;
       }
     }
@@ -495,15 +482,11 @@ protected:
       writeLog_("The installation of Java was not checked.");
     }
 
-    // create temporary directory
-    String temp_dir, conf_file;
-    temp_dir = QDir::toNativeSeparators((File::getTempDirectory() + "/" + File::getUniqueName() + "/").toQString());
-    writeDebug_("Creating temporary directory '" + temp_dir + "'", 1);
-    QDir d;
-    d.mkpath(temp_dir.toQString());
+    //tmp_dir
+    String temp_dir = makeAutoRemoveTempDirectory_();
 
     // create a temporary config file for LuciPHOr2 parameters
-    conf_file = temp_dir + "luciphor2_input_template.txt";
+    String conf_file = temp_dir + "luciphor2_input_template.txt";
     
     String id = getStringOption_("id");
     String in = getStringOption_("in");
@@ -511,16 +494,35 @@ protected:
     
     FileHandler fh;
     FileTypes::Type in_type = fh.getType(id);
-    
+
+    vector<PeptideIdentification> pep_ids;
+    vector<ProteinIdentification> prot_ids;
+
+    PeakMap exp;
+    MzMLFile file;
+    file.setLogType(log_type_);
+    PeakFileOptions options;
+    options.clearMSLevels();
+    options.addMSLevel(2);
+
+    file.load(in, exp);
+    exp.sortSpectra(true);
+
     // convert input to pepXML if necessary
     if (in_type == FileTypes::IDXML)
     {
       IdXMLFile().load(id, prot_ids, pep_ids);
-      IDFilter::keepNBestHits(pep_ids, 1); // Luciphor only calculates the best hit
-      
-      // create a tempory pepXML file for LuciPHOR2 input
-      String in_file_name = File::removeExtension(File::basename(id));
-      id = temp_dir + in_file_name + ".pepXML";
+      if (!pep_ids.empty())
+      {
+        IDFilter::keepNBestHits(pep_ids, 1); // LuciPHOR2 only calculates the best hit
+      }
+      else
+      {
+        LOG_WARN << "No PeptideIdentifications found in the IdXMLFile. Please check your previous steps.\n";
+      }
+      // create a temporary pepXML file for LuciPHOR2 input
+      String id_file_name = File::removeExtension(File::basename(id));
+      id = temp_dir + id_file_name + ".pepXML";
       
       PepXMLFile().store(id, prot_ids, pep_ids, in, "", false);
     }
@@ -549,6 +551,11 @@ protected:
     }
     
     writeConfigurationFile_(conf_file, config_map);    
+
+    // memory for JVM
+    QString java_memory = "-Xmx" + QString::number(getIntOption_("java_memory")) + "m";
+    int java_permgen = getIntOption_("java_permgen");
+
     QString executable = getStringOption_("executable").toQString();
     
     // Hack for KNIME. Looks for LUCIPHOR_PATH in the environment which is set in binaries.ini
@@ -562,27 +569,24 @@ protected:
     }
 
     QStringList process_params; // the actual process is Java, not LuciPHOr2!
-    process_params << "-jar" << executable << conf_file.toQString();                   
-
-    // execute LuciPHOr2    
-    int status = QProcess::execute("java", process_params);
-    if (status != 0)
+    process_params << java_memory;
+    
+    if (java_permgen > 0)
     {
-      writeLog_("Fatal error: Running LuciPHOr2 returned an error code. Does the LuciPHOr2 executable (.jar file) exist?");
-      return EXTERNAL_PROGRAM_ERROR;
+      process_params << "-XX:MaxPermSize=" + QString::number(java_permgen);
     }
-    
-    MSExperiment<> exp;
-    MzMLFile f;
-    f.setLogType(log_type_);
 
-    PeakFileOptions options;
-    options.clearMSLevels();
-    options.addMSLevel(2);
-    f.getOptions() = options;
-    f.load(in, exp);
-    exp.sortSpectra(true);
-    
+    process_params << "-jar" << executable << conf_file.toQString();
+
+    //-------------------------------------------------------------
+    // LuciPHOr2
+    //-------------------------------------------------------------
+    TOPPBase::ExitCodes exit_code = runExternalProcess_(java_executable.toQString(), process_params);
+    if (exit_code != EXECUTION_OK)
+    {
+      return exit_code;
+    }
+
     SpectrumLookup lookup;
     lookup.rt_tolerance = 0.05;
     lookup.readSpectra(exp.getSpectra());
@@ -657,8 +661,6 @@ protected:
     }
     IdXMLFile().store(out, prot_ids, pep_out);
 
-    removeTempDir_(temp_dir);
-    
     return EXECUTION_OK;
   }
 };

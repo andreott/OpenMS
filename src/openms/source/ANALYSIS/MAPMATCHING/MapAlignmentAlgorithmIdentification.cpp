@@ -2,7 +2,7 @@
 //                   OpenMS -- Open-Source Mass Spectrometry
 // --------------------------------------------------------------------------
 // Copyright The OpenMS Team -- Eberhard Karls University Tuebingen,
-// ETH Zurich, and Freie Universitaet Berlin 2002-2016.
+// ETH Zurich, and Freie Universitaet Berlin 2002-2018.
 //
 // This software is released under a three-clause BSD license:
 //  * Redistributions of source code must retain the above copyright
@@ -33,7 +33,6 @@
 // --------------------------------------------------------------------------
 
 #include <OpenMS/ANALYSIS/MAPMATCHING/MapAlignmentAlgorithmIdentification.h>
-#include <OpenMS/CONCEPT/LogStream.h>
 #include <OpenMS/FORMAT/FileHandler.h>
 #include <OpenMS/MATH/STATISTICS/StatisticFunctions.h>
 
@@ -90,14 +89,12 @@ namespace OpenMS
                                                             bool sorted)
   {
     medians.clear();
-    SeqToValue::iterator pos = medians.begin(); // prevent segfault (see below)
     for (SeqToList::iterator rt_it = rt_data.begin();
          rt_it != rt_data.end(); ++rt_it)
     {
       double median = Math::median(rt_it->second.begin(),
                                    rt_it->second.end(), sorted);
-      medians.insert(pos, make_pair(rt_it->first, median));
-      pos = --medians.end(); // would cause segfault if "medians" were empty
+      medians.insert(medians.end(), make_pair(rt_it->first, median));
     }
   }
 
@@ -120,9 +117,9 @@ namespace OpenMS
 
   // lists of peptide hits in "maps" will be sorted
   bool MapAlignmentAlgorithmIdentification::getRetentionTimes_(
-    MSExperiment<>& experiment, SeqToList& rt_data)
+    PeakMap& experiment, SeqToList& rt_data)
   {
-    for (MSExperiment<>::Iterator exp_it = experiment.begin();
+    for (PeakMap::Iterator exp_it = experiment.begin();
          exp_it != experiment.end(); ++exp_it)
     {
       getRetentionTimes_(exp_it->getPeptideIdentifications(), rt_data);
@@ -167,7 +164,6 @@ namespace OpenMS
       // remove peptides that don't occur in enough runs:
       LOG_DEBUG << "Removing peptides that occur in too few runs..." << endl;
       SeqToValue temp;
-      SeqToValue::iterator pos = temp.begin(); // to prevent segfault below
       for (SeqToValue::iterator ref_it = reference_.begin();
            ref_it != reference_.end(); ++ref_it)
       {
@@ -175,10 +171,11 @@ namespace OpenMS
         if ((med_it != medians_per_seq.end()) &&
             (med_it->second.size() + 1 >= min_run_occur_))
         {
-          temp.insert(pos, *ref_it); // we know new items should go at the end
-          pos = --temp.end(); // would cause segfault if "temp" was empty
+          temp.insert(temp.end(), *ref_it); // new items should go at the end
         }
       }
+      LOG_DEBUG << "Removed " << reference_.size() - temp.size() << " of "
+                << reference_.size() << " peptides." << endl;
       temp.swap(reference_);
     }
     else // compute overall RT median per sequence (median of medians per run)
@@ -188,22 +185,22 @@ namespace OpenMS
       // remove peptides that don't occur in enough runs (at least two):
       LOG_DEBUG << "Removing peptides that occur in too few runs..." << endl;
       SeqToList temp;
-      SeqToList::iterator pos = temp.begin(); // to prevent segfault below
       for (SeqToList::iterator med_it = medians_per_seq.begin();
            med_it != medians_per_seq.end(); ++med_it)
       {
         if (med_it->second.size() >= min_run_occur_)
         {
-          temp.insert(pos, *med_it);
-          pos = --temp.end(); // would cause segfault if "temp" was empty
+          temp.insert(temp.end(), *med_it);
         }
       }
+      LOG_DEBUG << "Removed " << medians_per_seq.size() - temp.size() << " of "
+                << medians_per_seq.size() << " peptides." << endl;
       temp.swap(medians_per_seq);
       computeMedians_(medians_per_seq, reference_);
     }
     if (reference_.empty())
     {
-      throw Exception::MissingInformation(__FILE__, __LINE__, __PRETTY_FUNCTION__, "No reference RT information left after filtering");
+      throw Exception::MissingInformation(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, "No reference RT information left after filtering");
     }
 
     double max_rt_shift = param_.getValue("max_rt_shift");
@@ -251,19 +248,30 @@ namespace OpenMS
       // current run ("medians_per_run[i]"), but also in at least one other run
       // ("medians_overall"):
       TransformationDescription::DataPoints data;
+      Size n_outliers = 0;
       for (SeqToValue::iterator med_it = medians_per_run[i].begin();
            med_it != medians_per_run[i].end(); ++med_it)
       {
         SeqToValue::const_iterator pos = reference_.find(med_it->first);
-        if ((pos != reference_.end()) &&
-            (abs(med_it->second - pos->second) <= max_rt_shift))
-        { // found, and satisfies "max_rt_shift" condition!
-          data.push_back(make_pair(med_it->second, pos->second));
+        if (pos != reference_.end())
+        {
+          if (abs(med_it->second - pos->second) <= max_rt_shift)
+          { // found, and satisfies "max_rt_shift" condition!
+            TransformationDescription::DataPoint point(med_it->second,
+                                                       pos->second, pos->first);
+            data.push_back(point);
+          }
+          else
+          {
+            n_outliers++;
+          }
         }
       }
       transforms.push_back(TransformationDescription(data));
       LOG_INFO << "- " << data.size() << " data points for sample "
-               << i + offset + 1 << "\n";
+               << i + offset + 1;
+      if (n_outliers) LOG_INFO << " (" << n_outliers << " outliers removed)";
+      LOG_INFO << "\n";
     }
     LOG_INFO << endl;
 

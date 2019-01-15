@@ -2,7 +2,7 @@
 //                   OpenMS -- Open-Source Mass Spectrometry
 // --------------------------------------------------------------------------
 // Copyright The OpenMS Team -- Eberhard Karls University Tuebingen,
-// ETH Zurich, and Freie Universitaet Berlin 2002-2016.
+// ETH Zurich, and Freie Universitaet Berlin 2002-2018.
 //
 // This software is released under a three-clause BSD license:
 //  * Redistributions of source code must retain the above copyright
@@ -28,14 +28,13 @@
 // ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 // --------------------------------------------------------------------------
-// $Maintainer: Alexandra Zerck $
+// $Maintainer: Timo Sachsenberg $
 // $Authors: Eva Lange $
 // --------------------------------------------------------------------------
 #include <OpenMS/FORMAT/MzMLFile.h>
 #include <OpenMS/KERNEL/MSExperiment.h>
 #include <OpenMS/TRANSFORMATIONS/RAW2PEAK/PeakPickerCWT.h>
 #include <OpenMS/APPLICATIONS/TOPPBase.h>
-#include <OpenMS/FORMAT/PeakTypeEstimator.h>
 
 using namespace OpenMS;
 using namespace std;
@@ -127,7 +126,7 @@ public:
 
 protected:
 
-  void registerOptionsAndFlags_()
+  void registerOptionsAndFlags_() override
   {
     registerInputFile_("in", "<file>", "", "input profile data file ");
     setValidFormats_("in", ListUtils::create<String>("mzML"));
@@ -138,12 +137,12 @@ protected:
     registerSubsection_("algorithm", "Algorithm parameters section");
   }
 
-  Param getSubsectionDefaults_(const String & /*section*/) const
+  Param getSubsectionDefaults_(const String & /*section*/) const override
   {
     return PeakPickerCWT().getDefaults();
   }
 
-  ExitCodes main_(int, const char **)
+  ExitCodes main_(int, const char **) override
   {
 
     //-------------------------------------------------------------
@@ -158,7 +157,7 @@ protected:
     //-------------------------------------------------------------
     MzMLFile mz_data_file;
     mz_data_file.setLogType(log_type_);
-    MSExperiment<Peak1D> ms_exp_raw;
+    PeakMap ms_exp_raw;
     mz_data_file.load(in, ms_exp_raw);
 
     if (ms_exp_raw.empty())
@@ -167,8 +166,8 @@ protected:
                   " contain chromatograms. This tool currently cannot handle them, sorry.";
       return INCOMPATIBLE_INPUT_DATA;
     }
-    //check for peak type (profile data required)
-    if (PeakTypeEstimator().estimateType(ms_exp_raw[0].begin(), ms_exp_raw[0].end()) == SpectrumSettings::PEAKS)
+    // check for peak type (profile data required)
+    if (ms_exp_raw[0].getType(true) == SpectrumSettings::CENTROID)
     {
       writeLog_("Warning: OpenMS peak type estimation indicates that this is not profile data!");
     }
@@ -186,7 +185,7 @@ protected:
     //-------------------------------------------------------------
     // pick
     //-------------------------------------------------------------
-    MSExperiment<> ms_exp_peaks;
+    PeakMap ms_exp_peaks;
 
     Param pepi_param = getParam_().copy("algorithm:", true);
     writeDebug_("Parameters passed to PeakPickerWavelet", pepi_param, 3);

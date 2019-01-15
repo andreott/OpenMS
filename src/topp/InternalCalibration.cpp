@@ -2,7 +2,7 @@
 //                   OpenMS -- Open-Source Mass Spectrometry
 // --------------------------------------------------------------------------
 // Copyright The OpenMS Team -- Eberhard Karls University Tuebingen,
-// ETH Zurich, and Freie Universitaet Berlin 2002-2016.
+// ETH Zurich, and Freie Universitaet Berlin 2002-2018.
 //
 // This software is released under a three-clause BSD license:
 //  * Redistributions of source code must retain the above copyright
@@ -40,6 +40,7 @@
 #include <OpenMS/FORMAT/FileTypes.h>
 #include <OpenMS/FORMAT/FileHandler.h>
 #include <OpenMS/FORMAT/IdXMLFile.h>
+#include <OpenMS/FORMAT/FeatureXMLFile.h>
 #include <OpenMS/FORMAT/MzMLFile.h>
 #include <OpenMS/FORMAT/TextFile.h>
 #include <OpenMS/FORMAT/TransformationXMLFile.h>
@@ -133,6 +134,8 @@ using namespace std;
   Usually, peptide ID's provide calibration points for MS1 precursors, i.e. are suitable for MS1. They are applicable for MS2 only if
   the same mass analyzer was used (e.g. Q-Exactive). In other words, MS/MS spectra acquired using the ion trap analyzer of a Velos cannot be calibrated using
   peptide ID's.
+  Precursor m/z associated to higher-level MS spectra are corrected if their precursor spectra are subject to calibration, 
+  e.g. precursor information within MS2 spectra is calibrated if target ms-level is set to 1.
   Lock masses ('cal:lock_in') can be specified freely for MS1 and/or MS2.
 
 
@@ -162,13 +165,14 @@ public:
 
 protected:
 
-  void registerOptionsAndFlags_()
+  void registerOptionsAndFlags_() override
   {
     // data
     registerInputFile_("in", "<file>", "", "Input peak file");
     setValidFormats_("in", ListUtils::create<String>("mzML"));
     registerOutputFile_("out", "<file>", "", "Output file ");
     setValidFormats_("out", ListUtils::create<String>("mzML"));
+    registerInputFile_("rscript_executable", "<file>", "Rscript", "Path to the Rscript executable (default: 'Rscript').", false);
         
     addEmptyLine_();
 
@@ -228,13 +232,14 @@ protected:
 
   }
 
-  ExitCodes main_(int, const char**)
+  ExitCodes main_(int, const char**) override
   {
     //-------------------------------------------------------------
     // parameter handling
     //-------------------------------------------------------------
     String in = getStringOption_("in");
-    String out = getStringOption_("out"); 
+    String out = getStringOption_("out");
+    String rscript_executable = getStringOption_("rscript_executable"); 
     String cal_id = getStringOption_("cal:id_in");
     String cal_lock = getStringOption_("cal:lock_in");
     String file_cal_lock_out = getStringOption_("cal:lock_out");
@@ -254,7 +259,7 @@ protected:
     //-------------------------------------------------------------
 
     // Raw data
-    MSExperiment<Peak1D> exp;
+    PeakMap exp;
     MzMLFile mz_file;
     mz_file.setLogType(log_type_);
     mz_file.load(in, exp);
@@ -297,7 +302,7 @@ protected:
         iter->split(",", vec);
         if (vec.size() != 3)
         {
-          throw Exception::MissingInformation(__FILE__, __LINE__, __PRETTY_FUNCTION__, String("Input file ") + cal_lock + " does not have three comma-separated entries per row!");
+          throw Exception::MissingInformation(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, String("Input file ") + cal_lock + " does not have three comma-separated entries per row!");
         }
         ref_masses.push_back(InternalCalibration::LockMass(vec[0].toDouble(), vec[1].toInt(), vec[2].toInt()));
       }
@@ -313,14 +318,14 @@ protected:
       if (!file_cal_lock_out.empty())
       {
         LOG_INFO << "\nWriting matched lock masses to mzML file '" << file_cal_lock_out << "'." << std::endl;
-        MSExperiment<> exp_out;
+        PeakMap exp_out;
         exp_out.set2DData(ic.getCalibrationPoints(), CalibrationData::getMetaValues());
         mz_file.store(file_cal_lock_out, exp_out);
       }
       if (!file_cal_lock_fail_out.empty())
       {
         LOG_INFO << "\nWriting unmatched lock masses to mzML file '" << file_cal_lock_fail_out << "'." << std::endl;
-        MSExperiment<> exp_out;
+        PeakMap exp_out;
         exp_out.set2DData(failed_points, CalibrationData::getMetaValues());
         mz_file.store(file_cal_lock_fail_out, exp_out);
       }
@@ -351,7 +356,8 @@ protected:
                       getStringOption_("quality_control:models"),
                       getStringOption_("quality_control:models_plot"),
                       getStringOption_("quality_control:residuals"),
-                      getStringOption_("quality_control:residuals_plot")))
+                      getStringOption_("quality_control:residuals_plot"),
+                      rscript_executable))
     {
       LOG_ERROR << "\nCalibration failed. See error message above!" << std::endl;
       return UNEXPECTED_RESULT;

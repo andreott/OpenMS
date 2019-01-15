@@ -2,7 +2,7 @@
 //                   OpenMS -- Open-Source Mass Spectrometry
 // --------------------------------------------------------------------------
 // Copyright The OpenMS Team -- Eberhard Karls University Tuebingen,
-// ETH Zurich, and Freie Universitaet Berlin 2002-2016.
+// ETH Zurich, and Freie Universitaet Berlin 2002-2018.
 //
 // This software is released under a three-clause BSD license:
 //  * Redistributions of source code must retain the above copyright
@@ -40,14 +40,13 @@
 #include <OpenMS/VISUAL/MetaDataBrowser.h>
 
 // QT
-#include <QtGui/QPainter>
-#include <QtGui/QPaintEvent>
-#include <QtGui/QBitmap>
-#include <QtGui/QWheelEvent>
-#include <QtGui/QMessageBox>
-#include <QtGui/QPushButton>
-#include <QtGui/QFontMetrics>
-#include <QtGui/QFontMetrics>
+#include <QPainter>
+#include <QPaintEvent>
+#include <QBitmap>
+#include <QWheelEvent>
+#include <QtWidgets/QMessageBox>
+#include <QtWidgets/QPushButton>
+#include <QFontMetrics>
 
 #include <iostream>
 
@@ -70,11 +69,11 @@ namespace OpenMS
     zoom_pos_(zoom_stack_.end()),
     update_buffer_(false),
     current_layer_(0),
-    spectrum_widget_(0),
+    spectrum_widget_(nullptr),
     percentage_factor_(1.0),
     snap_factors_(1, 1.0),
     rubber_band_(QRubberBand::Rectangle, this),
-    context_add_(0),
+    context_add_(nullptr),
     show_timing_(false),
     selected_peak_(),
     measurement_start_()
@@ -82,7 +81,7 @@ namespace OpenMS
     //Prevent filling background
     setAttribute(Qt::WA_OpaquePaintEvent);
     // get mouse coordinates while mouse moves over diagramm and for focus handling
-    setMouseTracking(TRUE);
+    setMouseTracking(true);
     setFocusPolicy(Qt::StrongFocus);
 
     setMinimumSize(200, 200);
@@ -115,14 +114,14 @@ namespace OpenMS
   void SpectrumCanvas::resizeEvent(QResizeEvent * /* e */)
   {
 #ifdef DEBUG_TOPPVIEW
-    cout << "BEGIN " << __PRETTY_FUNCTION__ << endl;
+    cout << "BEGIN " << OPENMS_PRETTY_FUNCTION << endl;
 #endif
     buffer_ = QImage(width(), height(), QImage::Format_RGB32);
     update_buffer_ = true;
     updateScrollbars_();
-    update_(__PRETTY_FUNCTION__);
+    update_(OPENMS_PRETTY_FUNCTION);
 #ifdef DEBUG_TOPPVIEW
-    cout << "END   " << __PRETTY_FUNCTION__ << endl;
+    cout << "END   " << OPENMS_PRETTY_FUNCTION << endl;
 #endif
   }
 
@@ -132,21 +131,21 @@ namespace OpenMS
     layers_[current_layer_].filters = filters;
     //update the content
     update_buffer_ = true;
-    update_(__PRETTY_FUNCTION__);
+    update_(OPENMS_PRETTY_FUNCTION);
   }
 
   void SpectrumCanvas::showGridLines(bool show)
   {
     show_grid_ = show;
     update_buffer_ = true;
-    update_(__PRETTY_FUNCTION__);
+    update_(OPENMS_PRETTY_FUNCTION);
   }
 
   void SpectrumCanvas::intensityModeChange_()
   {
     recalculateSnapFactor_();
     update_buffer_ = true;
-    update_(__PRETTY_FUNCTION__);
+    update_(OPENMS_PRETTY_FUNCTION);
   }
 
   void SpectrumCanvas::mzToXAxis(bool mz_to_x_axis)
@@ -161,7 +160,7 @@ namespace OpenMS
 
     updateScrollbars_();
     update_buffer_ = true;
-    update_(__PRETTY_FUNCTION__);
+    update_(OPENMS_PRETTY_FUNCTION);
   }
 
   void SpectrumCanvas::changeVisibleArea_(const AreaType & new_area, bool repaint, bool add_to_stack)
@@ -189,7 +188,7 @@ namespace OpenMS
     if (repaint)
     {
       update_buffer_ = true;
-      update_(__PRETTY_FUNCTION__);
+      update_(OPENMS_PRETTY_FUNCTION);
     }
   }
 
@@ -210,13 +209,13 @@ namespace OpenMS
     AreaType new_area;
     for (int dim = 0; dim < AreaType::DIMENSION; dim++)
     {
-      new_area.min_[dim] = visible_area_.min_[dim] + (1.0 - zoom_factor) * (visible_area_.max_[dim] - visible_area_.min_[dim])
-                           * ((dim == 0) == isMzToXAxis()
-                              ? (PointType::CoordinateType)x / width()
-                              : (PointType::CoordinateType)(height() - y) / height());
-      new_area.max_[dim] = new_area.min_[dim] + zoom_factor * (visible_area_.max_[dim] - visible_area_.min_[dim]);
-      new_area.min_[dim] = max(new_area.min_[dim], overall_data_range_.min_[dim]);
-      new_area.max_[dim] = min(new_area.max_[dim], overall_data_range_.max_[dim]);
+      // don't assign to "new_area.min_"/"max_" immediately, as this can lead to strange crashes at the min/max calls below on some platforms
+      // (GCC 4.6.3; faulty out-of-order execution?):
+      AreaType::CoordinateType coef = ((dim == 0) == isMzToXAxis()) ? (AreaType::CoordinateType(x) / width()) : (AreaType::CoordinateType(height() - y) / height());
+      AreaType::CoordinateType min_pos = visible_area_.min_[dim] + (1.0 - zoom_factor) * (visible_area_.max_[dim] - visible_area_.min_[dim]) * coef;
+      AreaType::CoordinateType max_pos = min_pos + zoom_factor * (visible_area_.max_[dim] - visible_area_.min_[dim]);
+      new_area.min_[dim] = max(min_pos, overall_data_range_.min_[dim]);
+      new_area.max_[dim] = min(max_pos, overall_data_range_.max_[dim]);
     }
     if (new_area != visible_area_)
     {
@@ -301,7 +300,7 @@ namespace OpenMS
 
   void SpectrumCanvas::setVisibleArea(AreaType area)
   {
-    //cout << __PRETTY_FUNCTION__ << endl;
+    //cout << OPENMS_PRETTY_FUNCTION << endl;
     changeVisibleArea_(area);
   }
 
@@ -390,12 +389,13 @@ namespace OpenMS
     return current_layer_;
   }
 
-  bool SpectrumCanvas::addLayer(ExperimentSharedPtrType map, const String & filename)
+  bool SpectrumCanvas::addLayer(ExperimentSharedPtrType map, ODExperimentSharedPtrType od_map, const String & filename)
   {
     layers_.resize(layers_.size() + 1);
     layers_.back().param = param_;
     layers_.back().filename = filename;
-    layers_.back().getPeakData() = map;
+    layers_.back().setPeakData(map);
+    layers_.back().setOnDiscPeakData(od_map);
 
     if (layers_.back().getPeakData()->getChromatograms().size() != 0 
         && layers_.back().getPeakData()->size() != 0)
@@ -471,7 +471,7 @@ namespace OpenMS
     {
       layer.visible = b;
       update_buffer_ = true;
-      update_(__PRETTY_FUNCTION__);
+      update_(OPENMS_PRETTY_FUNCTION);
     }
   }
 
@@ -483,7 +483,7 @@ namespace OpenMS
     {
       layer.filters.setActive(b);
       update_buffer_ = true;
-      update_(__PRETTY_FUNCTION__);
+      update_(OPENMS_PRETTY_FUNCTION);
     }
   }
 
@@ -551,6 +551,11 @@ namespace OpenMS
 
     // add 4% margin (2% left, 2% right) to RT, m/z and intensity
     overall_data_range_.extend(1.04);
+
+    // set minimum intensity to 0
+    DRange<3>::PositionType new_min = overall_data_range_.minPosition();
+    new_min[it_dim] = 0;
+    overall_data_range_.setMin(new_min);
   }
 
   double SpectrumCanvas::getSnapFactor()
@@ -598,7 +603,7 @@ namespace OpenMS
     measurement_start_.clear();
 
     //update
-    update_(__PRETTY_FUNCTION__);
+    update_(OPENMS_PRETTY_FUNCTION);
   }
 
   void SpectrumCanvas::leaveEvent(QEvent * /*e*/)
@@ -708,44 +713,51 @@ namespace OpenMS
     {
       const AreaType & area = getVisibleArea();
       const ExperimentType & peaks = *layer.getPeakData();
-      //copy experimental settings
+      // copy experimental settings
       map.ExperimentalSettings::operator=(peaks);
-      //reserve space for the correct number of spectra in RT range
+      // get begin / end of the range
+      ExperimentType::ConstIterator peak_start = layer.getPeakData()->begin();
       ExperimentType::ConstIterator begin = layer.getPeakData()->RTBegin(area.minPosition()[1]);
       ExperimentType::ConstIterator end = layer.getPeakData()->RTEnd(area.maxPosition()[1]);
+      Size begin_idx = std::distance(peak_start, begin);
+      Size end_idx = std::distance(peak_start, end);
 
-      //Exception for Spectrum1DCanvas, here we copy the currently visualized spectrum
+      // Exception for Spectrum1DCanvas, here we copy the currently visualized spectrum
       bool is_1d = (getName() == "Spectrum1DCanvas");
       if (is_1d)
       {
-        begin = layer.getPeakData()->begin() + layer.getCurrentSpectrumIndex();
-        end = begin + 1;
+        begin_idx = layer.getCurrentSpectrumIndex();
+        end_idx = begin_idx + 1;
       }
 
+      // reserve space for the correct number of spectra in RT range
       map.reserve(end - begin);
-      //copy spectra
-      for (ExperimentType::ConstIterator it = begin; it != end; ++it)
+      // copy spectra
+      for (Size it_idx = begin_idx; it_idx < end_idx; ++it_idx)
       {
         SpectrumType spectrum;
-        //copy spectrum meta information
-        spectrum.SpectrumSettings::operator=(* it);
-        spectrum.setRT(it->getRT());
-        spectrum.setMSLevel(it->getMSLevel());
-        spectrum.setPrecursors(it->getPrecursors());
-        //copy peak information
-        if (!is_1d && it->getMSLevel() > 1 && !it->getPrecursors().empty())       //MS^n (n>1) spectra are copied if their precursor is in the m/z range
+        SpectrumType spectrum_ref = layer.getSpectrum(it_idx);
+        // copy spectrum meta information
+        spectrum.SpectrumSettings::operator=(spectrum_ref);
+        spectrum.setRT(spectrum_ref.getRT());
+        spectrum.setMSLevel(spectrum_ref.getMSLevel());
+        spectrum.setPrecursors(spectrum_ref.getPrecursors());
+        // copy peak information
+        if (!is_1d && spectrum_ref.getMSLevel() > 1 && !spectrum_ref.getPrecursors().empty())
         {
-          if (it->getPrecursors()[0].getMZ() >= area.minPosition()[0] && it->getPrecursors()[0].getMZ() <= area.maxPosition()[0])
+          //MS^n (n>1) spectra are copied if their precursor is in the m/z range
+          if (spectrum_ref.getPrecursors()[0].getMZ() >= area.minPosition()[0] && spectrum_ref.getPrecursors()[0].getMZ() <= area.maxPosition()[0])
           {
-            spectrum.insert(spectrum.begin(), it->begin(), it->end());
+            spectrum.insert(spectrum.begin(), spectrum_ref.begin(), spectrum_ref.end());
             map.addSpectrum(spectrum);
           }
         }
-        else         // MS1(0) spectra are cropped to the m/z range
+        else
         {
-          for (SpectrumType::ConstIterator it2 = it->MZBegin(area.minPosition()[0]); it2 != it->MZEnd(area.maxPosition()[0]); ++it2)
+          // MS1 spectra are cropped to the m/z range
+          for (SpectrumType::ConstIterator it2 = spectrum_ref.MZBegin(area.minPosition()[0]); it2 != spectrum_ref.MZEnd(area.maxPosition()[0]); ++it2)
           {
-            if (layer.filters.passes(*it, it2 - it->begin()))
+            if (layer.filters.passes(spectrum_ref, it2 - spectrum_ref.begin()))
             {
               spectrum.push_back(*it2);
             }
@@ -801,7 +813,7 @@ namespace OpenMS
     if (layer.type == LayerData::DT_CONSENSUS)
     {
       //copy file descriptions
-      map.getFileDescriptions() = layer.getConsensusMap()->getFileDescriptions();
+      map.getColumnHeaders() = layer.getConsensusMap()->getColumnHeaders();
       //Visible area
       double min_rt = getVisibleArea().minPosition()[1];
       double max_rt = getVisibleArea().maxPosition()[1];
@@ -861,11 +873,11 @@ namespace OpenMS
     {
       if (layer.type == LayerData::DT_PEAK)
       {
-        dlg.add(*layer.getPeakData());
-        //Exception for Spectrum1DCanvas, here we add the meta data of the one spectrum
+        dlg.add(*layer.getPeakDataMuteable());
+        // Exception for Spectrum1DCanvas, here we add the meta data of the one spectrum
         if (getName() == "Spectrum1DCanvas")
         {
-          dlg.add((*layer.getPeakData())[layer.getCurrentSpectrumIndex()]);
+          dlg.add((*layer.getPeakDataMuteable())[layer.getCurrentSpectrumIndex()]);
         }
       }
       else if (layer.type == LayerData::DT_FEATURE)
@@ -889,7 +901,7 @@ namespace OpenMS
     {
       if (layer.type == LayerData::DT_PEAK)
       {
-        dlg.add((*layer.getPeakData())[index]);
+        dlg.add((*layer.getPeakDataMuteable())[index]);
       }
       else if (layer.type == LayerData::DT_FEATURE)
       {
@@ -941,9 +953,9 @@ namespace OpenMS
     {
       layer.modified = modified;
 #ifdef DEBUG_TOPPVIEW
-      cout << "BEGIN " << __PRETTY_FUNCTION__ << endl;
+      cout << "BEGIN " << OPENMS_PRETTY_FUNCTION << endl;
       cout << "emit: layerModificationChange" << endl;
-      cout << "END " << __PRETTY_FUNCTION__ << endl;
+      cout << "END " << OPENMS_PRETTY_FUNCTION << endl;
 #endif
       emit layerModficationChange(activeLayerIndex(), modified);
     }
@@ -967,7 +979,7 @@ namespace OpenMS
       width = max(width, 4 + metrics.width(text[i]));
     }
 
-    //draw backgrond for text
+    //draw background for text
     painter.fillRect(2, 3, width, height, QColor(255, 255, 255, 200));
 
     //draw text
@@ -976,7 +988,6 @@ namespace OpenMS
     {
       painter.drawText(3, 3 + (i + 1) * line_spacing, text[i]);
     }
-
     painter.restore();
   }
 

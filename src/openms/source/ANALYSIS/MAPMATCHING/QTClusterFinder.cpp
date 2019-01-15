@@ -2,7 +2,7 @@
 //                   OpenMS -- Open-Source Mass Spectrometry
 // --------------------------------------------------------------------------
 // Copyright The OpenMS Team -- Eberhard Karls University Tuebingen,
-// ETH Zurich, and Freie Universitaet Berlin 2002-2016.
+// ETH Zurich, and Freie Universitaet Berlin 2002-2018.
 //
 // This software is released under a three-clause BSD license:
 //  * Redistributions of source code must retain the above copyright
@@ -33,14 +33,9 @@
 // --------------------------------------------------------------------------
 
 #include <OpenMS/ANALYSIS/MAPMATCHING/QTClusterFinder.h>
-#include <OpenMS/CONCEPT/Exception.h>
-#include <OpenMS/DATASTRUCTURES/ListUtils.h>
 #include <OpenMS/KERNEL/FeatureMap.h>
 #include <OpenMS/METADATA/PeptideIdentification.h>
-
-#include <list>
-#include <vector>
-#include <algorithm> // for max
+#include <OpenMS/KERNEL/FeatureHandle.h>
 
 // #define DEBUG_QTCLUSTERFINDER
 
@@ -48,8 +43,6 @@ using std::list;
 using std::vector;
 using std::max;
 using std::make_pair;
-
-#include <iostream>
 
 namespace OpenMS
 {
@@ -61,7 +54,7 @@ namespace OpenMS
 
     defaults_.setValue("use_identifications", "false", "Never link features that are annotated with different peptides (only the best hit per peptide identification is taken into account).");
     defaults_.setValidStrings("use_identifications", ListUtils::create<String>("true,false"));
-    defaults_.setValue("nr_partitions", 1, "How many partitions in m/z space should be used for the algorithm (more partitions means faster runtime and more memory efficient execution )");
+    defaults_.setValue("nr_partitions", 100, "How many partitions in m/z space should be used for the algorithm (more partitions means faster runtime and more memory efficient execution )");
     defaults_.setMinInt("nr_partitions", 1);
 
 
@@ -79,7 +72,7 @@ namespace OpenMS
       String msg = "Maximum m/z or intensity out of range (m/z: " + 
         String(max_mz) + ", intensity: " + String(max_intensity) + "). "
         "Has 'updateRanges' been called on the input maps?";
-      throw Exception::IllegalArgument(__FILE__, __LINE__, __PRETTY_FUNCTION__,
+      throw Exception::IllegalArgument(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
                                        msg);
     }
     use_IDs_ = String(param_.getValue("use_identifications")) == "true";
@@ -103,7 +96,7 @@ namespace OpenMS
                              ConsensusMap& result_map)
   {
     // update parameters (dummy)
-    setParameters_(1, 1); 
+    setParameters_(1, 1);
 
     result_map.clear(false);
 
@@ -112,7 +105,7 @@ namespace OpenMS
          map_it != input_maps.end(); ++map_it)
     {
       for (typename MapType::const_iterator feat_it = map_it->begin();
-          feat_it != map_it->end(); feat_it++)
+          feat_it != map_it->end(); ++feat_it)
       {
         massrange.push_back(feat_it->getMZ());
       }
@@ -133,11 +126,20 @@ namespace OpenMS
       double massrange_diff = max_diff_mz_;
       int pts_per_partition = massrange.size() / nr_partitions_;
 
+      // if m/z tolerance is specified in ppm, we adapt massrange_diff
+      // in each iteration below
+      bool mz_ppm = param_.getValue("distance_MZ:unit") == "ppm";
+      double mz_tol = param_.getValue("distance_MZ:max_difference");
+
       // compute partition boundaries
       std::vector< double > partition_boundaries; 
       partition_boundaries.push_back(massrange.front());
       for (size_t j = 0; j < massrange.size()-1; j++)
       {
+        if (mz_ppm)
+        {
+          massrange_diff = mz_tol * 1e-6 * massrange[j+1];
+        }
         if (fabs(massrange[j] - massrange[j+1]) > massrange_diff)
         {
           if (j >= (partition_boundaries.size() ) * pts_per_partition  )
@@ -193,20 +195,20 @@ namespace OpenMS
     num_maps_ = input_maps.size();
     if (num_maps_ < 2)
     {
-      throw Exception::IllegalArgument(__FILE__, __LINE__, __PRETTY_FUNCTION__,
+      throw Exception::IllegalArgument(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
                                        "At least two input maps required");
     }
 
-    // set up the distance functor (and set other parameters):
+    // set up the distance functor (and set other parameters)
+    // for the current partition
     double max_intensity = 0.0;
     double max_mz = 0.0;
     for (typename vector<MapType>::const_iterator map_it = input_maps.begin(); 
          map_it != input_maps.end(); ++map_it)
     {
       max_intensity = max(max_intensity, map_it->getMaxInt());
-      max_mz = max(max_mz, map_it->getMax()[1]);
+      max_mz = max(max_mz, map_it->getMax().getY());
     }
-
     setParameters_(max_intensity, max_mz);
 
     // create the hash grid and fill it with features:
@@ -335,8 +337,14 @@ namespace OpenMS
     for (OpenMSBoost::unordered_map<Size, OpenMS::GridFeature*>::const_iterator
          it = elements.begin(); it != elements.end(); ++it)
     {
-      feature.insert(it->first, it->second->getFeature());
+      BaseFeature& elem_feat = const_cast<BaseFeature&>(it->second->getFeature());
+      feature.insert(it->first, elem_feat);
+      if (elem_feat.metaValueExists("dc_charge_adducts"))
+      {
+        feature.setMetaValue(String(elem_feat.getUniqueId()), elem_feat.getMetaValue("dc_charge_adducts"));
+      }
     }
+
     feature.computeConsensus();
 
 #ifdef DEBUG_QTCLUSTERFINDER

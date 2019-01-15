@@ -2,7 +2,7 @@
 //                   OpenMS -- Open-Source Mass Spectrometry
 // --------------------------------------------------------------------------
 // Copyright The OpenMS Team -- Eberhard Karls University Tuebingen,
-// ETH Zurich, and Freie Universitaet Berlin 2002-2016.
+// ETH Zurich, and Freie Universitaet Berlin 2002-2018.
 //
 // This software is released under a three-clause BSD license:
 //  * Redistributions of source code must retain the above copyright
@@ -32,8 +32,7 @@
 // $Authors: Marc Sturm, Clemens Groepl, Hendrik Weisser $
 // --------------------------------------------------------------------------
 
-#ifndef OPENMS_APPLICATIONS_MAPALIGNERBASE_H
-#define OPENMS_APPLICATIONS_MAPALIGNERBASE_H
+#pragma once
 
 #include <OpenMS/FORMAT/MzMLFile.h>
 #include <OpenMS/FORMAT/ConsensusXMLFile.h>
@@ -48,6 +47,7 @@
 
 #include <OpenMS/ANALYSIS/MAPMATCHING/TransformationModelBSpline.h>
 #include <OpenMS/ANALYSIS/MAPMATCHING/TransformationModelLinear.h>
+#include <OpenMS/ANALYSIS/MAPMATCHING/TransformationModelLowess.h>
 #include <OpenMS/ANALYSIS/MAPMATCHING/TransformationModelInterpolated.h>
 
 #include <OpenMS/APPLICATIONS/TOPPBase.h>
@@ -84,7 +84,7 @@ public:
     Param params;
     params.setValue("type", default_model, "Type of model");
     // TODO: avoid referring to each TransformationModel subclass explicitly
-    StringList model_types = ListUtils::create<String>("linear,b_spline,interpolated");
+    StringList model_types = ListUtils::create<String>("linear,b_spline,lowess,interpolated");
     if (!ListUtils::contains(model_types, default_model))
     {
       model_types.insert(model_types.begin(), default_model);
@@ -95,9 +95,15 @@ public:
     TransformationModelLinear::getDefaultParameters(model_params);
     params.insert("linear:", model_params);
     params.setSectionDescription("linear", "Parameters for 'linear' model");
+
     TransformationModelBSpline::getDefaultParameters(model_params);
     params.insert("b_spline:", model_params);
     params.setSectionDescription("b_spline", "Parameters for 'b_spline' model");
+
+    TransformationModelLowess::getDefaultParameters(model_params);
+    params.insert("lowess:", model_params);
+    params.setSectionDescription("lowess", "Parameters for 'lowess' model");
+
     TransformationModelInterpolated::getDefaultParameters(model_params);
     params.insert("interpolated:", model_params);
     params.setSectionDescription("interpolated",
@@ -212,4 +218,3 @@ protected:
 
 /// @endcond
 
-#endif // OPENMS_APPLICATIONS_MAPALIGNERBASE_H

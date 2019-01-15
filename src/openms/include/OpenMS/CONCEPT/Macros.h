@@ -2,7 +2,7 @@
 //                   OpenMS -- Open-Source Mass Spectrometry
 // --------------------------------------------------------------------------
 // Copyright The OpenMS Team -- Eberhard Karls University Tuebingen,
-// ETH Zurich, and Freie Universitaet Berlin 2002-2016.
+// ETH Zurich, and Freie Universitaet Berlin 2002-2018.
 //
 // This software is released under a three-clause BSD license:
 //  * Redistributions of source code must retain the above copyright
@@ -28,12 +28,11 @@
 // ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 // --------------------------------------------------------------------------
-// $Maintainer: Stephan Aiche$
+// $Maintainer: Timo Sachsenberg$
 // $Authors: Marc Sturm $
 // --------------------------------------------------------------------------
 
-#ifndef OPENMS_CONCEPT_MACROS_H
-#define OPENMS_CONCEPT_MACROS_H
+#pragma once
 
 
 #include <OpenMS/config.h>
@@ -67,7 +66,7 @@
 #define OPENMS_PRECONDITION(condition, message) \
   if (!(condition)) \
   { \
-    Exception::Precondition e(__FILE__, __LINE__, __PRETTY_FUNCTION__, # condition); \
+    Exception::Precondition e(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, # condition); \
     if (std::strcmp(message, "") != 0) \
     { \
       ::std::string tmp(e.getMessage()); \
@@ -86,7 +85,7 @@
 #define OPENMS_POSTCONDITION(condition, message) \
   if (!(condition)) \
   { \
-    Exception::Postcondition e(__FILE__, __LINE__, __PRETTY_FUNCTION__, # condition); \
+    Exception::Postcondition e(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, # condition); \
     if (std::strcmp(message, "") != 0) \
     { \
       std::string tmp(e.getMessage()); \
@@ -117,4 +116,3 @@
 
 /** @} */ // end of Conditions
 
-#endif //OPENMS_CONCEPT_MACROS_H

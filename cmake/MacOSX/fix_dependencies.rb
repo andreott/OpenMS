@@ -4,7 +4,7 @@
 #                   OpenMS -- Open-Source Mass Spectrometry
 # --------------------------------------------------------------------------
 # Copyright The OpenMS Team -- Eberhard Karls University Tuebingen,
-# ETH Zurich, and Freie Universitaet Berlin 2002-2016.
+# ETH Zurich, and Freie Universitaet Berlin 2002-2018.
 #
 # This software is released under a three-clause BSD license:
 #  * Redistributions of source code must retain the above copyright
@@ -41,12 +41,13 @@ require 'fileutils'
 
 ##### GLOBAL VARIABLES
 $handledLibraries = Set.new
-lib = nil
-bin = nil
+$lib_dir = nil
+$bin_dir = nil
+$plugin_dir = nil
 $install_name_tool=`which install_name_tool`.strip
 $DEBUG = false
 $currentIndent=0
-$executableId="@executable_path/../lib/"
+$executableId="@executable_path/"
 
 ###############################################################################
 def debug(message)
@@ -60,13 +61,18 @@ def debug(message)
 end
 
 ###############################################################################
-def fixable(path)
-  if path.match(/^\./)
+def fixable(name, path)
+  if File.directory?(path + name)
     return false
-  elsif path.match(/\.app$/)
+  elsif name.match(/^\./)
+    return false
+  elsif name.match(/\.app$/)
     return false
   else
-    return true
+    filename = "#{path}/#{name}"
+    debug "#{filename}"
+    `otool -L #{filename} 2> /dev/null`
+    return ($? >> 8) == 0
   end
 end
 
@@ -81,12 +87,14 @@ def cleanOtoolEntry(otool_line)
 end
 
 ###############################################################################
-def getId(otool_output)
-  id = otool_output.delete_at(0).strip
+def extractInstallName(otool_output)
+  # Skip file basename
+  otool_output.delete_at(0).strip
+  # Save install name (id)
   id = otool_output.delete_at(0).strip
   # clean id
   id = cleanOtoolEntry(id)
-#  debug "Found ID: #{id}"  
+  # return id and remaining otool output = dependencies
   return id, otool_output
 end
 
@@ -112,7 +120,7 @@ def handleDependencies(otool_out, targetPath, currentLib)
     # (\/usr\/lib|\/System)
     if fix_lib.match(/^(\/usr\/lib|\/System)/)
       debug "Ignoring system-lib: #{fix_lib}"
-    elsif fix_lib.match(/^@executable/)
+    elsif fix_lib.start_with?($executableId)
       puts "Ignoring libs that were already relinked (#{fix_lib})"
     elsif not fix_lib.match(/\//) # we need a path here, otherwise it is a lib in the same directory
       debug "we do not fix libs which are in the same directory #{fix_lib}"
@@ -120,9 +128,9 @@ def handleDependencies(otool_out, targetPath, currentLib)
       newPath=""
       libname=""
       if isFramework(fix_lib)
-        newPath, libname = handleFramework(fix_lib, targetPath)
+        _, libname = handleFramework(fix_lib, $lib_dir)
       else
-        newPath, libname = handleDyLib(fix_lib, targetPath)
+        _, libname = handleDyLib(fix_lib, $lib_dir)
       end
       
       # fix loading of this library
@@ -201,13 +209,14 @@ def handleFramework(frameworkPath, targetPath)
   if not $handledLibraries.include?(libname)
     # run otool
     otool_out=`otool -L #{frameworkPath}`.strip.split(/\n/)
-    id, otool_out = getId(otool_out)
-    debug "Handle FW #{frameworkPath} -> #{id}"
-  
-    # update the id
+    # strips first two lines
+    id, otool_out = extractInstallName(otool_out)
+    
+    # update the install_name (-id)
     fixId(newFrameWorkPath,libname)
+    debug "Handle FW #{frameworkPath} -> #{id}"
 
-    # check the actual dependencies
+    # check the actual dependencies (lines 3++)
     handleDependencies(otool_out, targetPath, newFrameWorkPath)
   
     # mark as processed
@@ -228,17 +237,18 @@ def handleDyLib(dylibPath, targetPath)
 
   # copy if necessary
   newDyLibPath,libname=copyLib(dylibPath, targetPath)
-  
+
   if not $handledLibraries.include?(libname)
     # run otool
     otool_out=`otool -L #{dylibPath}`.strip.split(/\n/)
-    id, otool_out = getId(otool_out)
-    debug "Handle DYLIB #{dylibPath} -> #{id}"
+    # strips first two lines
+    id, otool_out = extractInstallName(otool_out)
   
-    # fixId
+    # update install_name (-id) of current DyLib
     fixId(newDyLibPath,libname)
-  
-    # check the actual dependencies
+    debug "Handle DYLIB #{dylibPath} --> #{id}"
+
+    # check the actual dependencies (lines 3++)
     handleDependencies(otool_out, targetPath, newDyLibPath)
   
     # mark as processed
@@ -254,10 +264,10 @@ def handleDyLib(dylibPath, targetPath)
 end
 
 ###############################################################################
-def handleBinary(binaryPath, targetPath)
+def handleBinary(binaryPath)
   $currentIndent+=1
   
-  debug "Fixing #{binaryPath}"
+  debug "Fixing binary #{binaryPath}"
   
   # no copy, no id change; juts run otool
   otool_out=`otool -L #{binaryPath}`.strip.split(/\n/)
@@ -267,7 +277,7 @@ def handleBinary(binaryPath, targetPath)
 
   # handle all referenced libraries and copy them if necessary to 
   # the lib ref path
-  handleDependencies(otool_out, targetPath, binaryPath)
+  handleDependencies(otool_out, $lib_dir, binaryPath)
   
   # readjust
   $currentIndent-=1
@@ -283,7 +293,9 @@ opts = GetoptLong.new(
   [ '--verbose', '-v', GetoptLong::NO_ARGUMENT ],
   [ '--lib-path', '-l', GetoptLong::REQUIRED_ARGUMENT ],
   [ '--install-name-tool', '-i', GetoptLong::OPTIONAL_ARGUMENT ],
-  [ '--bin-path', '-b', GetoptLong::REQUIRED_ARGUMENT ]
+  [ '--bin-path', '-b', GetoptLong::OPTIONAL_ARGUMENT ],
+  [ '--plugin-path', '-p', GetoptLong::OPTIONAL_ARGUMENT ],
+  [ '--path-prefix', '-e', GetoptLong::OPTIONAL_ARGUMENT ]
 )
 
 usage = "#{File.basename($0)} --bin-path PATH-TO-BINARIES --lib-path PATH-TO-STORE-LIBRARIES
@@ -295,6 +307,10 @@ usage = "#{File.basename($0)} --bin-path PATH-TO-BINARIES --lib-path PATH-TO-STO
   the target path where the handled libraries should be stored and possibly already libraries exist
 -b, --bin-path: 
   the path were all the binaries that should be handled are located
+-p, --plugin-path: 
+  the path were optional plugin libraries like from QT5 are located
+-e, --path-prefix: 
+  the prefix that is added to the new install_name (default: @executable_path/)
 -v, --verbose:
   increase verbosity
 "
@@ -307,35 +323,66 @@ opts.each do |opt, arg|
       $install_name_tool = arg
       puts "Use #{install_name_tool} to fix binaries in #{bin}"
     when '--lib-path'
-      lib = Pathname.new(arg).realpath
+      $lib_dir = Pathname.new(arg).realpath
     when '--bin-path'
-      bin = Pathname.new(arg).realpath
-    when '-v'
+      $bin_dir = Pathname.new(arg).realpath
+    when '--plugin-path'
+      $plugin_dir = Pathname.new(arg).realpath
+    when '--path-prefix'
+      $executableId = arg
+    when '--verbose'
       $DEBUG = true
   end
 end
 
-if lib == nil or bin == nil
-  puts "Please provide a bin and lib path"
+if $lib_dir.nil?
+  puts "Please provide at least a lib path"
   puts "#{usage}"
   exit 1
+elsif !$bin_dir.nil?
+  $executableId = $executableId + $lib_dir.relative_path_from($bin_dir).to_s
+  $executableId += "/"
+  puts "Substituting prefix to find libs with:"
+  puts $executableId
 end
 
+debug "HANDLING LIB DIR"
 # fix libraries contained in lib-path
-for content in Dir.entries(lib) 
-  if fixable(content)
+for content in Dir.entries($lib_dir)
+  if fixable(content, $lib_dir)
     if isFramework(content)
-#      handleFramework(lib + content, lib)
+#      handleFramework($lib_dir + content, $lib_dir)
+    elsif (content.end_with?(".dylib") or content.end_with?(".so"))
+      handleDyLib($lib_dir + content, $lib_dir)
+    end
+  else
+    debug "Skipped #{$lib_dir + content}. No binary or object?"
+  end
+end
+
+debug "HANDLING BIN DIR"
+# fix binary references
+if !$bin_dir.nil?
+  for content in Dir.entries($bin_dir)
+    if fixable(content, $bin_dir)
+      if (content.end_with?(".dylib") or content.end_with?(".so"))
+        debug "Handle dylib #{$bin_dir + content}"
+        handleDyLib($bin_dir + content, $bin_dir)
+      else
+        debug "Handle binary #{$bin_dir + content}"
+        handleBinary($bin_dir + content)
+      end
     else
-      handleDyLib(lib + content, lib)
+      debug "Skipped #{$bin_dir + content}. No binary or object?"
     end
   end
 end
 
-# fix binary references
-for content in Dir.entries(bin)
-  if fixable(content)
-    handleBinary(bin + content, lib)
+if !$plugin_dir.nil?
+  debug "HANDLING PLUGIN DIR"
+  for content in Dir.glob("#{$plugin_dir}/**/*.dylib")
+    debug "Handle dylib #{$plugin_dir + content}"
+    handleDyLib($plugin_dir + content, File.dirname($plugin_dir + content))
   end
 end
   

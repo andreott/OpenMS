@@ -2,7 +2,7 @@
 //                   OpenMS -- Open-Source Mass Spectrometry
 // --------------------------------------------------------------------------
 // Copyright The OpenMS Team -- Eberhard Karls University Tuebingen,
-// ETH Zurich, and Freie Universitaet Berlin 2002-2016.
+// ETH Zurich, and Freie Universitaet Berlin 2002-2018.
 //
 // This software is released under a three-clause BSD license:
 //  * Redistributions of source code must retain the above copyright
@@ -74,7 +74,7 @@ public:
   }
 
 protected:
-  void registerOptionsAndFlags_()
+  void registerOptionsAndFlags_() override
   {
     registerInputFile_("in_database", "<file>", "", "input file containing the database in FASTA format");
     setValidFormats_("in_database", ListUtils::create<String>("fasta"));
@@ -149,6 +149,8 @@ protected:
     // calculations
     //-------------------------------------------------------------
 
+
+    os << "proteinID\tcoverage (%)\tunique hits\n";
     for (Size j = 0; j < proteins.size(); ++j)
     {
       coverage.clear();
@@ -215,7 +217,7 @@ protected:
       // details for this protein
       if (counts[j] > 0)
       {
-        os << proteins[j].identifier << "(coverage%, #unique hits): " <<  statistics[j] * 100 << "%, " << counts[j] << "\n";
+        os << proteins[j].identifier << "\t" << statistics[j] * 100 << "\t" << counts[j] << "\n";
       }
 
 // os << statistics[j] << endl;
@@ -253,7 +255,7 @@ protected:
     return EXECUTION_OK;
   }
 
-  ExitCodes main_(int, const char**)
+  ExitCodes main_(int, const char**) override
   {
     String out = getStringOption_("out");
 

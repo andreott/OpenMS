@@ -2,7 +2,7 @@
 //                   OpenMS -- Open-Source Mass Spectrometry               
 // --------------------------------------------------------------------------
 // Copyright The OpenMS Team -- Eberhard Karls University Tuebingen,
-// ETH Zurich, and Freie Universitaet Berlin 2002-2016.
+// ETH Zurich, and Freie Universitaet Berlin 2002-2018.
 // 
 // This software is released under a three-clause BSD license:
 //  * Redistributions of source code must retain the above copyright
@@ -47,8 +47,8 @@ START_TEST(Precursor, "$Id$")
 /////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////
 
-Precursor* ptr = 0;
-Precursor* nullPointer = 0;
+Precursor* ptr = nullptr;
+Precursor* nullPointer = nullptr;
 START_SECTION((Precursor()))
 	ptr = new Precursor();
 	TEST_NOT_EQUAL(ptr, nullPointer)
@@ -69,11 +69,32 @@ START_SECTION((void setActivationEnergy(double activation_energy)))
   TEST_REAL_SIMILAR(tmp.getActivationEnergy(),47.11);
 END_SECTION
 
+START_SECTION((double getDriftTime() const))
+  Precursor tmp;
+  TEST_EQUAL(tmp.getDriftTime(),-1);
+END_SECTION
+
+START_SECTION((void setDriftTime(double dt)))
+  Precursor tmp;
+  tmp.setDriftTime(47.11);
+  TEST_REAL_SIMILAR(tmp.getDriftTime(),47.11);
+END_SECTION
+
+START_SECTION((double getDriftTimeUnit() const ))
+  Precursor tmp;
+  TEST_EQUAL(tmp.getDriftTimeUnit(), Precursor::DriftTimeUnit::NONE);
+END_SECTION
+
+START_SECTION((void setDriftTimeUnit(double dt)))
+  Precursor tmp;
+  tmp.setDriftTimeUnit(Precursor::DriftTimeUnit::MILLISECOND);
+  TEST_EQUAL(tmp.getDriftTimeUnit(), Precursor::DriftTimeUnit::MILLISECOND);
+END_SECTION
+
 START_SECTION((const set<ActivationMethod>& getActivationMethods() const))
   Precursor tmp;
   TEST_EQUAL(tmp.getActivationMethods().size(),0);
 END_SECTION
-
 
 START_SECTION((set<ActivationMethod>& getActivationMethods()))
   Precursor tmp;
@@ -111,6 +132,28 @@ START_SECTION((void setIsolationWindowLowerOffset(double bound)))
   TEST_REAL_SIMILAR(tmp.getIsolationWindowLowerOffset(), 22.8);
 END_SECTION
 
+START_SECTION((double getDriftTimeWindowUpperOffset() const))
+  Precursor tmp;
+  TEST_REAL_SIMILAR(tmp.getDriftTimeWindowUpperOffset(), 0);
+END_SECTION
+
+START_SECTION((void setDriftTimeWindowUpperOffset(double bound)))
+  Precursor tmp;
+  tmp.setDriftTimeWindowUpperOffset(22.7);
+  TEST_REAL_SIMILAR(tmp.getDriftTimeWindowUpperOffset(), 22.7);
+END_SECTION
+
+START_SECTION((double getDriftTimeWindowLowerOffset() const))
+  Precursor tmp;
+  TEST_REAL_SIMILAR(tmp.getDriftTimeWindowLowerOffset(), 0);
+END_SECTION
+
+START_SECTION((void setDriftTimeWindowLowerOffset(double bound)))
+  Precursor tmp;
+  tmp.setDriftTimeWindowLowerOffset(22.8);
+  TEST_REAL_SIMILAR(tmp.getDriftTimeWindowLowerOffset(), 22.8);
+END_SECTION
+
 START_SECTION((Int getCharge() const))
   Precursor tmp;
   TEST_EQUAL(tmp.getCharge(), 0);
@@ -143,9 +186,13 @@ END_SECTION
 START_SECTION((Precursor(const Precursor& source)))
 	Precursor tmp;
 	tmp.setActivationEnergy(47.11);
+	tmp.setDriftTime(7.11);
+  tmp.setDriftTimeUnit(Precursor::DriftTimeUnit::MILLISECOND);
 	tmp.getActivationMethods().insert(Precursor::CID);
   tmp.setIsolationWindowUpperOffset(22.7);
   tmp.setIsolationWindowLowerOffset(22.8);
+  tmp.setDriftTimeWindowUpperOffset(12.8);
+  tmp.setDriftTimeWindowLowerOffset(12.7);
 	tmp.setMetaValue("label",String("label"));
 	
 	Precursor tmp2(tmp);
@@ -153,15 +200,23 @@ START_SECTION((Precursor(const Precursor& source)))
 	TEST_EQUAL(tmp2.getActivationMethods().size(),1);
 	TEST_REAL_SIMILAR(tmp2.getIsolationWindowUpperOffset(), 22.7);
 	TEST_REAL_SIMILAR(tmp2.getIsolationWindowLowerOffset(), 22.8);
+	TEST_REAL_SIMILAR(tmp2.getDriftTimeWindowUpperOffset(), 12.8);
+	TEST_REAL_SIMILAR(tmp2.getDriftTimeWindowLowerOffset(), 12.7);
 	TEST_REAL_SIMILAR(tmp2.getActivationEnergy(),47.11);
+	TEST_REAL_SIMILAR(tmp2.getDriftTime(),7.11);
+  TEST_EQUAL(tmp2.getDriftTimeUnit(), Precursor::DriftTimeUnit::MILLISECOND);
 END_SECTION
 
 START_SECTION((Precursor& operator= (const Precursor& source)))
 	Precursor tmp;
 	tmp.setActivationEnergy(47.11);
+	tmp.setDriftTime(7.11);
+  tmp.setDriftTimeUnit(Precursor::DriftTimeUnit::MILLISECOND);
 	tmp.getActivationMethods().insert(Precursor::CID);
   tmp.setIsolationWindowUpperOffset(22.7);
   tmp.setIsolationWindowLowerOffset(22.8);
+  tmp.setDriftTimeWindowUpperOffset(12.8);
+  tmp.setDriftTimeWindowLowerOffset(12.7);
 	tmp.setMetaValue("label",String("label"));
 	
 	//normal assignment
@@ -171,7 +226,11 @@ START_SECTION((Precursor& operator= (const Precursor& source)))
 	TEST_EQUAL(tmp2.getActivationMethods().size(),1);
 	TEST_REAL_SIMILAR(tmp2.getIsolationWindowUpperOffset(), 22.7);
 	TEST_REAL_SIMILAR(tmp2.getIsolationWindowLowerOffset(), 22.8);
+	TEST_REAL_SIMILAR(tmp2.getDriftTimeWindowUpperOffset(), 12.8);
+	TEST_REAL_SIMILAR(tmp2.getDriftTimeWindowLowerOffset(), 12.7);
 	TEST_REAL_SIMILAR(tmp2.getActivationEnergy(),47.11);
+	TEST_REAL_SIMILAR(tmp2.getDriftTime(),7.11);
+  TEST_EQUAL(tmp2.getDriftTimeUnit(), Precursor::DriftTimeUnit::MILLISECOND);
 		
 	//assignment of empty object
 	tmp2 = Precursor();
@@ -179,7 +238,11 @@ START_SECTION((Precursor& operator= (const Precursor& source)))
 	TEST_EQUAL(tmp2.getActivationMethods().size(),0);
 	TEST_REAL_SIMILAR(tmp2.getIsolationWindowUpperOffset(), 0.0);
 	TEST_REAL_SIMILAR(tmp2.getIsolationWindowLowerOffset(), 0.0);
+	TEST_REAL_SIMILAR(tmp2.getDriftTimeWindowUpperOffset(), 0.0);
+	TEST_REAL_SIMILAR(tmp2.getDriftTimeWindowLowerOffset(), 0.0);
 	TEST_REAL_SIMILAR(tmp2.getActivationEnergy(),0.0);
+	TEST_REAL_SIMILAR(tmp2.getDriftTime(),-1.0);
+  TEST_EQUAL(tmp2.getDriftTimeUnit(), Precursor::DriftTimeUnit::NONE);
 END_SECTION
 
 START_SECTION((bool operator== (const Precursor& rhs) const))
@@ -191,6 +254,14 @@ START_SECTION((bool operator== (const Precursor& rhs) const))
 	TEST_EQUAL(tmp==tmp2, false);
 	
 	tmp2 = tmp;
+	tmp.setDriftTime(5.0);
+	TEST_EQUAL(tmp==tmp2, false);
+
+	tmp2 = tmp;
+  tmp.setDriftTimeUnit(Precursor::DriftTimeUnit::MILLISECOND);
+	TEST_EQUAL(tmp==tmp2, false);
+
+	tmp2 = tmp;
 	tmp.getActivationMethods().insert(Precursor::CID);
 	TEST_EQUAL(tmp==tmp2, false);
 	
@@ -200,6 +271,14 @@ START_SECTION((bool operator== (const Precursor& rhs) const))
 
 	tmp2 = tmp;
   tmp.setIsolationWindowLowerOffset(22.8);
+	TEST_EQUAL(tmp==tmp2, false);
+
+	tmp2 = tmp;
+  tmp.setDriftTimeWindowUpperOffset(22.7);
+	TEST_EQUAL(tmp==tmp2, false);
+
+	tmp2 = tmp;
+  tmp.setDriftTimeWindowLowerOffset(22.8);
 	TEST_EQUAL(tmp==tmp2, false);
 
 	tmp2 = tmp;
@@ -224,6 +303,14 @@ START_SECTION((bool operator!= (const Precursor& rhs) const))
 	TEST_EQUAL(tmp!=tmp2, true);
 	
 	tmp2 = tmp;
+	tmp.setDriftTime(5.0);
+	TEST_EQUAL(tmp!=tmp2, true);
+
+	tmp2 = tmp;
+  tmp.setDriftTimeUnit(Precursor::DriftTimeUnit::MILLISECOND);
+	TEST_EQUAL(tmp!=tmp2, true);
+
+	tmp2 = tmp;
 	tmp.getActivationMethods().insert(Precursor::CID);
 	TEST_EQUAL(tmp!=tmp2, true);
 	
@@ -233,6 +320,14 @@ START_SECTION((bool operator!= (const Precursor& rhs) const))
 
 	tmp2 = tmp;	tmp2 = tmp;
   tmp.setIsolationWindowLowerOffset(22.8);
+	TEST_EQUAL(tmp!=tmp2, true);
+
+	tmp2 = tmp;	tmp2 = tmp;
+  tmp.setDriftTimeWindowUpperOffset(22.7);
+	TEST_EQUAL(tmp!=tmp2, true);
+
+	tmp2 = tmp;	tmp2 = tmp;
+  tmp.setDriftTimeWindowLowerOffset(22.8);
 	TEST_EQUAL(tmp!=tmp2, true);
 
 	tmp2 = tmp;

@@ -2,7 +2,7 @@
 //                   OpenMS -- Open-Source Mass Spectrometry
 // --------------------------------------------------------------------------
 // Copyright The OpenMS Team -- Eberhard Karls University Tuebingen,
-// ETH Zurich, and Freie Universitaet Berlin 2002-2016.
+// ETH Zurich, and Freie Universitaet Berlin 2002-2018.
 //
 // This software is released under a three-clause BSD license:
 //  * Redistributions of source code must retain the above copyright
@@ -28,14 +28,14 @@
 // ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 // --------------------------------------------------------------------------
-// $Maintainer: Stephan Aiche$
+// $Maintainer: Timo Sachsenberg$
 // $Authors: Marc Sturm $
 // --------------------------------------------------------------------------
 
-#ifndef OPENMS_CONCEPT_CONSTANTS_H
-#define OPENMS_CONCEPT_CONSTANTS_H
+#pragma once
 
 #include <OpenMS/config.h>
+#include <string>
 
 /**
     @brief Main %OpenMS namespace.
@@ -253,8 +253,18 @@ namespace OpenMS
     */
     extern OPENMS_DLLAPI const double   CAL_PER_JOULE;
 
+    /** User parameter name for precursor mz error in ppm
+            String
+    */
+    extern OPENMS_DLLAPI const std::string   PRECURSOR_ERROR_PPM_USERPARAM;
+
+    /** User parameter name for fragment annotations
+            String
+    */
+    extern OPENMS_DLLAPI const std::string   FRAGMENT_ANNOTATION_USERPARAM;
+
+
     //@}
   }
 }
 
-#endif // OPENMS_CONCEPT_CONSTANTS_H

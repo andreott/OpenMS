@@ -2,7 +2,7 @@
 //                   OpenMS -- Open-Source Mass Spectrometry
 // --------------------------------------------------------------------------
 // Copyright The OpenMS Team -- Eberhard Karls University Tuebingen,
-// ETH Zurich, and Freie Universitaet Berlin 2002-2016.
+// ETH Zurich, and Freie Universitaet Berlin 2002-2018.
 //
 // This software is released under a three-clause BSD license:
 //  * Redistributions of source code must retain the above copyright
@@ -32,9 +32,9 @@
 // $Authors: Eva Lange, Clemens Groepl, Hendrik Weisser $
 // --------------------------------------------------------------------------
 
-#ifndef OPENMS_ANALYSIS_MAPMATCHING_MAPALIGNMENTALGORITHMIDENTIFICATION_H
-#define OPENMS_ANALYSIS_MAPMATCHING_MAPALIGNMENTALGORITHMIDENTIFICATION_H
+#pragma once
 
+#include <OpenMS/KERNEL/StandardTypes.h>
 #include <OpenMS/ANALYSIS/MAPMATCHING/TransformationDescription.h>
 #include <OpenMS/CONCEPT/ProgressLogger.h>
 #include <OpenMS/DATASTRUCTURES/DefaultParamHandler.h>
@@ -76,7 +76,7 @@ public:
     MapAlignmentAlgorithmIdentification();
 
     /// Destructor
-    virtual ~MapAlignmentAlgorithmIdentification();
+    ~MapAlignmentAlgorithmIdentification() override;
 
     // Set a reference for the alignment
     template <typename DataType> void setReference(DataType& data)
@@ -88,15 +88,16 @@ public:
       computeMedians_(rt_data, reference_, sorted);
       if (reference_.empty())
       {
-        throw Exception::MissingInformation(__FILE__, __LINE__, __PRETTY_FUNCTION__, "Could not extract retention time information from the reference file");
+        throw Exception::MissingInformation(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, "Could not extract retention time information from the reference file");
       }
     }
 
     /**
       @brief Align feature maps, consensus maps, peak maps, or peptide identifications.
 
-      @param data Vector of input data (FeatureMap, ConsensusMap, MSExperiment<> or @p vector<PeptideIdentification>) that should be aligned.
+      @param data Vector of input data (FeatureMap, ConsensusMap, PeakMap or @p vector<PeptideIdentification>) that should be aligned.
       @param transformations Vector of RT transformations that will be computed.
+      @param reference_index Index in @p data of the reference to align to, if any
     */
     template <typename DataType>
     void align(std::vector<DataType>& data,
@@ -111,10 +112,10 @@ public:
       bool use_internal_reference = (reference_index >= 0);
       if (use_internal_reference)
       {
-        if (reference_index >= data.size())
+        if (reference_index >= static_cast<Int>(data.size()))
         {
           throw Exception::IndexOverflow(__FILE__, __LINE__,
-                                         __PRETTY_FUNCTION__, reference_index,
+                                         OPENMS_PRETTY_FUNCTION, reference_index,
                                          data.size());
         }
         setReference(data[reference_index]);
@@ -188,7 +189,7 @@ protected:
 
       @return Are the RTs already sorted? (Here: false)
     */
-    bool getRetentionTimes_(MSExperiment<>& experiment, SeqToList& rt_data);
+    bool getRetentionTimes_(PeakMap& experiment, SeqToList& rt_data);
 
     /**
       @brief Collect retention time data ("RT" MetaInfo) from peptide IDs contained in feature maps or consensus maps
@@ -222,7 +223,8 @@ protected:
             if (!pep_it->getHits().empty())
             {
               any_hit = true;
-              double current_distance = abs(pep_it->getRT() - feat_it->getRT());
+              double current_distance = fabs(pep_it->getRT() -
+                                             feat_it->getRT());
               if (current_distance < rt_distance)
               {
                 pep_it->sort();
@@ -300,4 +302,3 @@ private:
 
 } // namespace OpenMS
 
-#endif // OPENMS_ANALYSIS_MAPMATCHING_MAPALIGNMENTALGORITHMIDENTIFICATION_H
