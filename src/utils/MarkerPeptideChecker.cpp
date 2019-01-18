@@ -148,7 +148,25 @@ protected:
         seqan::appendValue(needles, seqan::CharString(std::string("!") + entry.sequence + "#"));
     }
 
-    seqan::Pattern<seqan::String<seqan::CharString>, seqan::SetHorspool> pattern(needles);
+    unsigned num_threads = 1;
+
+#ifdef _OPENMP
+#pragma omp parallel
+{
+    num_threads = omp_get_max_threads();
+}
+#endif
+
+    typedef seqan::Pattern<seqan::String<seqan::CharString>, seqan::SetHorspool> TPattern;
+    //TPattern p(needles);
+    std::vector<std::shared_ptr<TPattern>> patterns;
+
+    for(size_t i = 0; i < num_threads; ++i)
+    {
+//        std::shared_ptr<TPattern> pp(new TPattern(needles));
+        patterns.push_back(std::shared_ptr<TPattern>(new TPattern(needles)));
+    }
+    //pattern(needles);
 
 
     //-------------------------------------------------------------
@@ -196,19 +214,23 @@ protected:
             {
                 digestor.digest(AASequence::fromString(fe.sequence), current_digest, min_size, max_size);
             }
-
-
+#ifdef _OPENMP
+            const unsigned thread_id = omp_get_thread_num();
+#else
+            const unsigned thread_id = 1;
+#endif
             for (const auto & seq : current_digest)
             {
                 seqan::CharString haystack(seqan::CharString(std::string("!") + seq.toString() + "#"));
                 seqan::Finder<seqan::CharString> finder(haystack);
 
-                while (seqan::find(finder, pattern))
+                //std::cout << "tid " <<  thread_id << " npats: " << patterns.size() << std::endl;
+                while (seqan::find(finder, *(patterns[thread_id])))
                 {
 #ifdef _OPENMP
 #pragma omp critical
 #endif
-                    hits[position(pattern)].push_back(fe.identifier);
+                    hits[position(*(patterns[thread_id]))].push_back(fe.identifier);
                 }
             }
 
