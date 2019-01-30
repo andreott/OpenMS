@@ -102,7 +102,7 @@ protected:
     registerOutputFile_("out", "<file>", "", "Output file (peptides)");
     setValidFormats_("out", ListUtils::create<String>("fasta"));
 
-    registerIntOption_("missed_cleavages", "<number>", 1, "The number of allowed missed cleavages", false);
+    registerIntOption_("missed_cleavages", "<number>", 0, "The number of allowed missed cleavages", false);
     setMinInt_("missed_cleavages", 0);
     registerIntOption_("min_length", "<number>", 6, "Minimum length of peptide", false);
     registerIntOption_("max_length", "<number>", 40, "Maximum length of peptide", false);
