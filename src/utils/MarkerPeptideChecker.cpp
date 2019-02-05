@@ -335,7 +335,12 @@ protected:
                 {
                     unsigned long tax_id = getTaxIdFromFastaHeader(h, acc_id_map);
                     unique_tax.insert(tax_id);
-                    unique_target_tax.insert(nodes_map[tax_id].target_level_id);
+                    const auto it = nodes_map.find(tax_id);
+                    if (it != nodes_map.end())
+                        unique_target_tax.insert(nodes_map[tax_id].target_level_id);
+                    else
+                        throw Exception::InvalidValue(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
+                                                            "No node entry found for tax id",  std::to_string(tax_id));
                 } catch (Exception::InvalidValue & e)
                 {
                     std::cerr << e.what() << "\n IGNORING FOR NOW!\n" << std::endl;
