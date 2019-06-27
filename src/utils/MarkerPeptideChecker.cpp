@@ -43,6 +43,7 @@
 
 #include <map>
 #include <unordered_map>
+#include <algorithm>
 
 #define USE_DIGEST
 
@@ -98,11 +99,11 @@ protected:
     setValidFormats_("in_marker", ListUtils::create<String>("fasta"));
     registerInputFile_("in_back", "<file>", "", "background DB", true);
     setValidFormats_("in_back", ListUtils::create<String>("fasta"));
-    registerInputFile_("in_nodes", "<file>", "", "ncbi taxonomy nodes file", false);
+    registerInputFile_("in_nodes", "<file>", "", "ncbi taxonomy nodes file", true);
     setValidFormats_("in_nodes", ListUtils::create<String>("csv"));
-    registerInputFile_("in_names", "<file>", "", "ncbi taxonomy names file", false);
+    registerInputFile_("in_names", "<file>", "", "ncbi taxonomy names file", true);
     setValidFormats_("in_names", ListUtils::create<String>("csv"));
-    registerInputFile_("in_acc_ids", "<file>", "", "ncbi accessions to taxonomy ids file", false);
+    registerInputFile_("in_acc_ids", "<file>", "", "ncbi accessions to taxonomy ids file", true);
     setValidFormats_("in_acc_ids", ListUtils::create<String>("csv"));
 
     registerOutputFile_("out", "<file>", "", "Output file");
@@ -116,9 +117,18 @@ protected:
     vector<String> all_enzymes;
     ProteaseDB::getInstance()->getAllNames(all_enzymes);
     registerStringOption_("enzyme", "<string>", "Trypsin", "The type of digestion enzyme", false);
-    setValidStrings_("enzyme", all_enzymes);    
+    setValidStrings_("enzyme", all_enzymes);
+    
+    registerIntOption_("isob", "<number>", 0, "account for isobarics: 0 - none, 1 I/L, 2 I/L + K/Q", false);
+    setMinInt_("isob", 0);
+ 
+    registerStringOption_("target_tax_level", "<string>", "species", "taxonomic level of interest", false);
+    setValidStrings_("target_tax_level", ListUtils::create<String>("species,genus,family"));
+    
+    registerIntOption_("target_tax_id", "<int>", 0, "target taxonomic id", false);
+    setMinInt_("target_tax_id", 0);
   }
-
+  
   struct NCBITax{
       std::string rank;
       std::string name;
@@ -126,19 +136,11 @@ protected:
       unsigned long target_level_id;
   };
 
+  //map from node id to Taxonomy entry
   typedef std::map<unsigned long, NCBITax> TTaxMap;
-
 
   ExitCodes main_(int, const char**) override
   {
-
-#ifdef _OPENMP
-//    omp_set_dynamic(0);
-//    omp_set_num_threads(16);
-
-    std::cout << "#Threads: " << omp_get_num_threads() << " " << omp_get_max_threads() << std::endl;
-#endif
-
     //-------------------------------------------------------------
     // parsing parameters
     //-------------------------------------------------------------
@@ -146,9 +148,13 @@ protected:
     const String db_name = getStringOption_("in_back");
     const String outputfile_name_acc = getStringOption_("out");
 
-    Size min_size = static_cast<Size>(getIntOption_("min_length"));
-    Size max_size = static_cast<Size>(getIntOption_("max_length"));
-    Size missed_cleavages = static_cast<Size>(getIntOption_("missed_cleavages"));
+    const Size min_size = static_cast<Size>(getIntOption_("min_length"));
+    const Size max_size = static_cast<Size>(getIntOption_("max_length"));
+    const Size missed_cleavages = static_cast<Size>(getIntOption_("missed_cleavages"));
+    
+    const unsigned isob = static_cast<Size>(getIntOption_("isob"));
+    const unsigned target_tax_id = getIntOption_("target_tax_id");
+    const String target_tax_level = getStringOption_("target_tax_level");
 
     //-------------------------------------------------------------
     // if given parse the nodes and names file
@@ -163,26 +169,40 @@ protected:
 
     if (nodesfile_name != "" && namesfile_name != "" && acc_id_filename != "")
     {
-        readNCBINodes(nodesfile_name, namesfile_name, nodes_map);
+        readNCBINodes(nodesfile_name, namesfile_name, target_tax_level, nodes_map);
         LOG_INFO << "DONE PARSING NODES" << std::endl;
         readIdMapping(acc_id_filename, acc_id_map);
         LOG_INFO << "DONE LOADING IDS" << std::endl;
+        
+        if (!nodes_map.count(target_tax_id))
+        {
+            throw Exception::InvalidValue(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
+            "target tax id not found",  std::to_string(target_tax_id));
+        }
         use_ncbi = true;
-//        return ExitCodes::EXECUTION_OK;
     }
 
     //-------------------------------------------------------------
     // reading input marker peptides and build search index for Wu Manber
     //-------------------------------------------------------------
-
     std::vector<FASTAFile::FASTAEntry> marker_list;
     FASTAFile().load(markerfile_name, marker_list);
 
-    seqan::String<seqan::CharString> needles, needles2;
+    seqan::String<seqan::CharString> needles;
+#ifdef USE_DIGEST
+    seqan::String<seqan::CharString> needles_dig;
+#endif
     for (const auto & entry : marker_list)
     {
-        seqan::appendValue(needles, seqan::CharString(std::string("!") + entry.sequence + "#"));
-        seqan::appendValue(needles2, seqan::CharString(std::string(entry.sequence)));
+        std::string tmp = entry.sequence;
+        if (isob > 0)
+            std::replace(tmp.begin(), tmp.end(), 'I', 'L');
+        if (isob > 1)
+            std::replace(tmp.begin(), tmp.end(), 'Q', 'K');
+#ifdef USE_DIGEST
+        seqan::appendValue(needles_dig, seqan::CharString(std::string("!") + tmp + "#"));
+#endif
+        seqan::appendValue(needles, seqan::CharString(std::string(tmp)));
     }
 
     unsigned num_threads = 1;
@@ -195,17 +215,20 @@ protected:
 #endif
 
     typedef seqan::Pattern<seqan::String<seqan::CharString>, seqan::SetHorspool> TPattern;
+    std::vector<std::shared_ptr<TPattern>> patterns_dig;
+
+#ifdef USE_DIGEST
     typedef seqan::Pattern<seqan::String<seqan::CharString>, seqan::AhoCorasick> TPattern2;
-    std::vector<std::shared_ptr<TPattern>> patterns;
-    std::vector<std::shared_ptr<TPattern2>> patterns2;
+    std::vector<std::shared_ptr<TPattern2>> patterns;
+#endif
 
     for(size_t i = 0; i < num_threads; ++i)
     {
-        patterns.push_back(std::shared_ptr<TPattern>(new TPattern(needles)));
-        patterns2.push_back(std::shared_ptr<TPattern2>(new TPattern2(needles2)));
+#ifdef USE_DIGEST
+        patterns_dig.push_back(std::shared_ptr<TPattern>(new TPattern(needles_dig)));
+#endif
+        patterns.push_back(std::shared_ptr<TPattern2>(new TPattern2(needles)));
     }
-    //pattern(needles);
-
 
     //-------------------------------------------------------------
     // iterate over database and search for tryptic peptides
@@ -220,8 +243,8 @@ protected:
     FASTAFile ff;
     ff.readStart(db_name);
 
-    unsigned entry = 0;
-    unsigned max_buffer_size = 10000;
+    Size entry_nr = 0;
+    const Size max_buffer_size = 1000000;
     std::vector<FASTAFile::FASTAEntry> buffer(max_buffer_size);
     while(!ff.atEnd())
     {
@@ -231,7 +254,7 @@ protected:
         while(ff.readNext(buffer[buff_size]) && ++buff_size < max_buffer_size);
 
         const Size cbs = buff_size;
-        std::cerr << "TOP" << std::endl;
+        //std::cerr << "TOP" << std::endl;
 #ifdef _OPENMP
 #pragma omp parallel
 {
@@ -242,29 +265,44 @@ protected:
 #endif
         for(Size i = 0; i < cbs; ++i)
         {
-//            std::cerr << i << std::endl;
             const FASTAFile::FASTAEntry & fe = buffer[i];
-
 #ifdef _OPENMP
             const unsigned thread_id = omp_get_thread_num();
 #else
             const unsigned thread_id = 0;
 #endif
-            seqan::CharString tmp = std::string(fe.sequence);
+
+#ifdef USE_DIGEST
+            unsigned local_hit_cnt = 0, local_hit_cnt_dig = 0;
+#endif            
+            seqan::CharString tmp(fe.sequence.c_str());
+            if (isob > 0)
+                std::replace(seqan::begin(tmp), seqan::end(tmp), 'I','L');
+            if (isob > 1)
+                std::replace(seqan::begin(tmp), seqan::end(tmp), 'Q','K');
+ 
             seqan::Finder<seqan::CharString> finder2(tmp);
 //            seqan::Finder<seqan::CharString const> finder2(std::string(fe.sequence));
 //            std::cerr << "Thread: " << thread_id << " : " <<  std::string(fe.sequence) << std::endl;
-            //std::cerr << seqan::needle(*(patterns2[thread_id])) << std::endl;
-            while (seqan::find(finder2, *(patterns2[thread_id])))
+            //std::cerr << seqan::needle(*([thread_id])) << std::endl;
+//            std::cerr << std::endl;
+            while (seqan::find(finder2, *(patterns[thread_id])))
             {
-//                std::cerr << "Hit2 " << seqan::beginPosition(finder2) << " : " << seqan::endPosition(finder2) << infix(finder2) << position(*(patterns2[thread_id])) << std::endl;
+//                std::cerr << "Hit2 " << seqan::beginPosition(finder2) << " : " << seqan::endPosition(finder2) << infix(finder2) << position(*(patterns[thread_id])) << std::endl;
 //                std::cerr << "Hit2 " << fe.identifier << ": " << fe.sequence << " : " << infix(finder2) << std::endl;
-                if(digestor.isValidProduct(fe.sequence, beginPosition(finder2), endPosition(finder2) - beginPosition(finder2), true, true, true))
+                if(digestor.isValidProduct(fe.sequence, beginPosition(finder2), endPosition(finder2) - beginPosition(finder2), false, false, false))
                 {
 #ifdef _OPENMP
 #pragma omp critical
 #endif
-                    hits[position(*(patterns2[thread_id]))].push_back(fe.identifier);
+//                    std::cerr << "Hit non" << fe.identifier << ": " << fe.sequence << " :: " << infix(finder2) << std::endl;
+//                    std::cerr << "Hit non " << seqan::beginPosition(finder2) << " : " << seqan::endPosition(finder2) << " : " << infix(finder2) << std::endl;
+//                    std::cerr << "Hit non " << fe.identifier << ": " << fe.sequence << " : " << infix(finder2) << std::endl;
+ 
+                    hits[position(*(patterns[thread_id]))].push_back(fe.identifier);
+#ifdef USE_DIGEST
+                    ++local_hit_cnt;
+#endif
                 }
 //                else
 //                {
@@ -286,29 +324,43 @@ protected:
 
             for (const auto & seq : current_digest)
             {
-                seqan::CharString haystack(seqan::CharString(std::string("!") + seq.toString() + "#"));
+                std::string tmp = seq.toString();
+                if (isob > 0)
+                    std::replace(tmp.begin(), tmp.end(), 'I', 'L');
+                if (isob > 1)
+                    std::replace(tmp.begin(), tmp.end(), 'Q', 'K');
+ 
+                seqan::CharString haystack(seqan::CharString(std::string("!") + tmp + "#"));
                 seqan::Finder<seqan::CharString> finder(haystack);
 
-                //std::cout << "tid " <<  thread_id << " npats: " << patterns.size() << std::endl;
-                while (seqan::find(finder, *(patterns[thread_id])))
+                //std::cout << "tid " <<  thread_id << " npats: " << patterns_dig.size() << std::endl;
+                while (seqan::find(finder, *(patterns_dig[thread_id])))
                 {
 #ifdef _OPENMP
 #pragma omp critical
 #endif
-//                    std::cerr << "Hit1 " << fe.identifier << ": " << fe.sequence << std::endl;
-                    hits_digest[position(*(patterns[thread_id]))].push_back(fe.identifier);
+//                    std::cerr << "Hit digest " << fe.identifier << ": " << fe.sequence << std::endl;
+                    hits_digest[position(*(patterns_dig[thread_id]))].push_back(fe.identifier);
+                    ++local_hit_cnt_dig;
                 }
             }
+/*            if (local_hit_cnt != local_hit_cnt_dig)
+            {
+                for (auto a : current_digest)
+                    std::cout << a.toString() << std::endl;    
+                exit(1);
+            }
+*/
 #endif
-//            ++entry;
-//            if(!(entry % 1000))
-//                std::cout << entry << '\n';
+            ++entry_nr;
+            if(!(entry_nr % 1000000))
+                std::cout << entry_nr << '\n';
         }
 
 #ifdef _OPENMP
 }
 #endif
-        std::cerr << "BOTTOM" << std::endl;
+        //std::cerr << "BOTTOM" << std::endl;
     }
 
     //-------------------------------------------------------------
@@ -317,11 +369,14 @@ protected:
 
 
     //original accessions
-    String outputfile_name_tax = outputfile_name_acc, outputfile_name_target = outputfile_name_acc;
+    String outputfile_name_tax(outputfile_name_acc);
+    String outputfile_name_target(outputfile_name_acc);
+    String outputfile_name_valid(outputfile_name_acc);
     outputfile_name_tax.substitute(".txt", "_tax.txt");
     outputfile_name_target.substitute(".txt", "_target.txt");
+    outputfile_name_valid.substitute(".txt", "_valid.txt");
 
-    TextFile out_acc, out_tax, out_target_tax;
+    TextFile out_acc, out_tax, out_target_tax, out_valid_hits;
     std::set<unsigned long> unique_tax, unique_target_tax;
 
     for(size_t i = 0; i < marker_list.size(); ++i)
@@ -329,7 +384,7 @@ protected:
         out_acc << marker_list[i].sequence + ": " + ListUtils::concatenate(hits[i], ",");
         if(use_ncbi)
         {
-            for (const auto & h : hits_digest[i])
+            for (const auto & h : hits[i])
             {
                 try
                 {
@@ -337,7 +392,15 @@ protected:
                     unique_tax.insert(tax_id);
                     const auto it = nodes_map.find(tax_id);
                     if (it != nodes_map.end())
+                    {   
+                        if (nodes_map[tax_id].target_level_id == -1ul)
+                        {
+                            std::cerr << "INVALID TARGET LEVEL ID FOR " << tax_id << std::endl;
+                            exit(1);
+                        }
+
                         unique_target_tax.insert(nodes_map[tax_id].target_level_id);
+                    }
                     else
                         throw Exception::InvalidValue(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
                                                             "No node entry found for tax id",  std::to_string(tax_id));
@@ -354,6 +417,10 @@ protected:
 
             out_tax << marker_list[i].sequence + ": " + ListUtils::concatenate(unique_tax_str, ",");
             out_target_tax << marker_list[i].sequence + ": " + ListUtils::concatenate(unique_target_tax_str, ",");
+            
+            if (unique_target_tax.empty() || (unique_target_tax.size() == 1 && unique_target_tax.count(target_tax_id)))
+                out_valid_hits << marker_list[i].sequence;
+                
             unique_tax.clear();
             unique_target_tax.clear();
         }
@@ -364,26 +431,34 @@ protected:
     {
         out_tax.store(outputfile_name_tax);
         out_target_tax.store(outputfile_name_target);
+        out_valid_hits.store(outputfile_name_valid);
     }
 
 #ifdef USE_DIGEST
     //-------------------------------------------------------------
-    // DEBUG OUTPUT
+    // Check for equality between normal and digest mode
     //-------------------------------------------------------------
 
     for(size_t i = 0; i < marker_list.size(); ++i)
     {
         bool eq = hits_digest[i].size() == hits[i].size();
+        std::vector<String> tmp_hits( hits[i].begin(),  hits[i].end());
+        std::vector<String> tmp_hits_digest( hits_digest[i].begin(),  hits_digest[i].end());
+        std::sort(tmp_hits.begin(), tmp_hits.end());
+        std::sort(tmp_hits_digest.begin(), tmp_hits_digest.end());
+        
+        eq = std::equal(tmp_hits_digest.begin(), tmp_hits_digest.end(), tmp_hits.begin());
 
-        std::list<String>::const_iterator it1(hits_digest[i].begin()), it2(hits[i].begin()), it1_end(hits_digest[i].end()), it2_end(hits[i].end());
-
-        while (eq && it1 != it1_end && it2 != it2_end)
-        {
-            eq = (*it1++ == *it2++);
-        }
+        // std::list<String>::const_iterator it1(hits_digest[i].begin()), it2(hits[i].begin()), it1_end(hits_digest[i].end()), it2_end(hits[i].end());
+        // 
+        // while (eq && it1 != it1_end && it2 != it2_end)
+        // {
+        //     eq = (*it1++ == *it2++);
+        // }
 
         if (!eq)
-            std::cout << marker_list[i].sequence << ": " << hits_digest[i].size() << " " << hits[i].size() << " " << eq << std::endl;
+            std::cerr << marker_list[i].sequence << ": " << hits_digest[i].size() 
+            << " " << hits[i].size() << " " << eq << std::endl;
     }
 #endif
 
@@ -434,6 +509,7 @@ protected:
 
   void readNCBINodes(const String & filename_nodes,
                      const String & filename_names,
+                     const String & target_tax_level,
                      TTaxMap & nodes_map)
   {
       //read the nodes - first col node id, sec col parent id, 3rd col rank
@@ -462,7 +538,7 @@ protected:
                   break;
               }
               tmp_ids.push_back(next_id);
-              if (nodes_map[next_id].rank == "species")
+              if (nodes_map[next_id].rank == target_tax_level)
                   target_id = next_id;
               else if (nodes_map[next_id].parent_id != -1ul && nodes_map[next_id].parent_id != next_id)
                   next_id = nodes_map[next_id].parent_id;
