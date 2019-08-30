@@ -13,6 +13,7 @@ DecoyDatabase
 DeMeanderize
 Digestor
 DigestorMotif
+DiscriminatingPeptideGenerator
 ERPairFinder
 FeatureFinderMetaboIdent
 FeatureFinderSuperHirn
