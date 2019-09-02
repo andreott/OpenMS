@@ -94,7 +94,8 @@ public:
 
 protected:
   typedef std::map<String, std::vector<unsigned>> TPeptideMatrix;
-  typedef std::map<String, std::vector<bool>> TPeptideBitMatrix;
+  //typedef std::map<String, std::vector<bool>> TPeptideBitMatrix;
+  typedef std::unordered_map<std::string, std::vector<bool>> TPeptideBitMatrix;
   typedef std::vector<StringList> TMarkerList; //one list of peptides per group
 
   void registerOptionsAndFlags_() override
@@ -166,11 +167,12 @@ protected:
     // reading sample sheet and validate against input faa file list
     //-------------------------------------------------------------
     SampleSheet sheet;
-    readSampleSheet(samsheet_file, sheet);
-    std::cerr << "done reading sample sheet\n";
-    if (!validateInput(faa_files, sheet))
+    if(!readSampleSheet(samsheet_file, faa_files, sheet))
         return ExitCodes::INPUT_FILE_CORRUPT;
-    std::cerr << "done validating sample sheet\n";
+    std::cerr << "done reading sample sheet\n";
+//    if (!validateInput(faa_files, sheet))
+//        return ExitCodes::INPUT_FILE_CORRUPT;
+//    std::cerr << "done validating sample sheet\n";
     //-------------------------------------------------------------
     // generate marker peptides
     //-------------------------------------------------------------
@@ -212,24 +214,33 @@ protected:
 //      std::map<String, unsigned> sample_to_id{};
   };
 
-  void readSampleSheet(const String & filename, SampleSheet & samples)
+  bool readSampleSheet(const String & filename, const StringList filenames_faa, SampleSheet & samples)
   {
       //read the nodes - first col node id, sec col parent id, 3rd col rank
       std::ifstream is(filename);
       String line;
       StringList fields;
 
+      StringList basenames(filenames_faa.size());
+      std::transform(filenames_faa.begin(), filenames_faa.end(), basenames.begin(), File::basename);
+      std::sort(basenames.begin(), basenames.end());
+
       std::map<String, unsigned> group_to_id{}, sample_to_id{};
       TextFile::getLine(is, line); //skip header
 
       while(TextFile::getLine(is, line))
-      {
-
+      {          
           line.split('\t', fields);
 
           if (fields.size() != 3)
               throw(Exception::ParseError(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
                                           "sample sheet line does not have 3 columns",  line));
+
+          if (!ListUtils::contains(basenames, fields[0]))
+          {
+              LOG_WARN << "Not all filenames in sample sheet were given as input! Missing Filename: " << fields[0] << '\n';
+              continue;
+          }
 
           samples.filenames.push_back(fields[0]);
           samples.filename_to_id[fields[0]] = samples.filenames.size() - 1;
@@ -260,6 +271,19 @@ protected:
           }
           samples.samples.push_back(it_s->second);
       }
+
+      //OH OH - some filenames have no entry in sample sheet! Find out and report their names and return error
+      if (samples.filenames.size() < basenames.size())
+      {
+          StringList diff_a, fn_sorted(samples.filenames);
+          std::sort(fn_sorted.begin(), fn_sorted.end());
+          std::back_insert_iterator<StringList> it(diff_a);
+          std::set_difference(basenames.begin(), basenames.end(), samples.filenames.begin(), samples.filenames.end(), it);
+
+          LOG_ERROR << "Not all filenames in sample sheet!\nMissingFilenames: " << ListUtils::concatenate(diff_a, "\t");
+          return false;
+      }
+      return true;
   }
 
   bool validateInput(StringList faa, const SampleSheet & sheet)
@@ -331,7 +355,12 @@ protected:
           while(ff.readNext(fe))
           {
               std::vector<AASequence> current_digest;
-              digestor.digest(AASequence::fromString(fe.sequence), current_digest, opts.min_size, opts.max_size);
+
+              //remove marker for stop codon as the created 'X' cause trouble and would have to be deleted from peptides
+              if(fe.sequence.back() == '*')
+                  fe.sequence.pop_back();
+
+              digestor.digest(AASequence::fromString(fe.sequence, false), current_digest, opts.min_size, opts.max_size);
 
               for (const auto & seq : current_digest)
               {
@@ -345,15 +374,13 @@ protected:
                   if (!full_mat.count(tmp))
                       full_mat[tmp] = std::vector<bool>(num_files, false);
 
-
-//                  std::cerr << tmp << '\t' << file_id << std::endl;
                   full_mat[tmp][file_id] = true;
               }
           }
       }
 
-      std::vector<unsigned> sample_cnt(num_samples, 0);
-      std::vector<unsigned> group_cnt(num_groups, 0);
+      std::vector<unsigned> sample_cnt(num_samples, 0), sample_cnt_bin(num_samples, 0);
+      std::vector<unsigned> group_cnt_cons(num_groups, 0), group_cnt(num_groups, 0);
 
       markers.clear();
       markers.resize(num_groups);
@@ -363,23 +390,28 @@ protected:
       {
           //combine samples
           std::fill(sample_cnt.begin(), sample_cnt.end(), 0);
+          std::fill(sample_cnt_bin.begin(), sample_cnt_bin.end(), 0);
           for (Size i = 0; i < row.second.size(); ++i)
                 sample_cnt[sheet.samples[i]] += row.second[i];
 
           for (Size i = 0; i < sample_cnt.size(); ++i)
-              sample_cnt[i] = sample_cnt[i] >= opts.sample_t * sample_sizes[i] ? 1:0;
+              sample_cnt_bin[i] = sample_cnt[i] >= opts.sample_t * sample_sizes[i] ? 1:0;
 
           //combine groups
           std::fill(group_cnt.begin(), group_cnt.end(), 0);
+          std::fill(group_cnt_cons.begin(), group_cnt_cons.end(), 0);
           for (Size i = 0; i < sample_cnt.size(); ++i)
+          {
               group_cnt[sheet.groups[i]] += sample_cnt[i];
+              group_cnt_cons[sheet.groups[i]] += sample_cnt_bin[i];
+          }
 
           //is it group specific marker?
           bool above_t = false;
           Size pot_marker = undef;
           for (Size i = 0; i < group_cnt.size(); ++i)
           {
-              if (group_cnt[i] >= opts.group_t * group_sizes[i])
+              if (group_cnt_cons[i] >= opts.group_t * group_sizes[i])
               {
                   //already above threshold for another group?
                   if (above_t)
@@ -390,7 +422,7 @@ protected:
                   pot_marker = i;
                   above_t = true;
               }
-              else if (group_cnt[i] > 0) //below threshold but non-zero? KO!
+              else if (group_cnt[i] > 0) //below threshold but non-zero for some replicate? KO!
               {
                   pot_marker = undef;
                   break;
