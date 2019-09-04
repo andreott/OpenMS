@@ -45,6 +45,8 @@
 #include <unordered_map>
 #include <algorithm>
 
+#include <QDir>
+
 #define USE_DIGEST
 
 using namespace OpenMS;
@@ -96,7 +98,8 @@ protected:
   typedef std::map<String, std::vector<unsigned>> TPeptideMatrix;
   //typedef std::map<String, std::vector<bool>> TPeptideBitMatrix;
   typedef std::unordered_map<std::string, std::vector<bool>> TPeptideBitMatrix;
-  typedef std::vector<StringList> TMarkerList; //one list of peptides per group
+  typedef std::unordered_map<std::string, std::vector<Size>> TPeptideProteinTie;
+  typedef std::vector<std::vector<std::pair<String, StringList>>> TMarkerList; //one list of peptides per group and one list of assiciated protein accessions
 
   void registerOptionsAndFlags_() override
   {
@@ -107,6 +110,8 @@ protected:
 
     registerOutputFile_("out", "<file>", "", "group specific peptides");
     setValidFormats_("out", ListUtils::create<String>("csv"));
+
+    registerStringOption_("out_faa_dir", "<file>", "", "if set for each input file a file with the same name containing markers will be stored to this directory.", false, false);
 
     registerOutputFile_("out_matrix", "<file>", "", "peptide abundance matrix");
     setValidFormats_("out_matrix", ListUtils::create<String>("csv"));
@@ -140,6 +145,7 @@ protected:
       Size isob{};
       Size missed_cleavages{};
       String enzyme{};
+      String output_dir{};
       double sample_t{};
       double group_t{};
   };
@@ -154,6 +160,19 @@ protected:
     const StringList faa_files =  getStringList_("in_faa");
     const String samsheet_file = getStringOption_("sample_sheet");
     const String outfile = getStringOption_("out");
+    const String out_dir = getStringOption_("out_faa_dir");
+
+    if (!out_dir.empty())
+    {
+        QDir dir(out_dir.toQString());
+
+        if (!dir.exists())
+        {
+            LOG_ERROR << "Specified path does not exist\n";
+            return ExitCodes::CANNOT_WRITE_OUTPUT_FILE;
+        }
+        opt.output_dir = dir.absolutePath();
+    }
 
     opt.min_size = static_cast<Size>(getIntOption_("min_length"));
     opt.max_size = static_cast<Size>(getIntOption_("max_length"));
@@ -166,13 +185,12 @@ protected:
     //-------------------------------------------------------------
     // reading sample sheet and validate against input faa file list
     //-------------------------------------------------------------
+
     SampleSheet sheet;
     if(!readSampleSheet(samsheet_file, faa_files, sheet))
         return ExitCodes::INPUT_FILE_CORRUPT;
     std::cerr << "done reading sample sheet\n";
-//    if (!validateInput(faa_files, sheet))
-//        return ExitCodes::INPUT_FILE_CORRUPT;
-//    std::cerr << "done validating sample sheet\n";
+
     //-------------------------------------------------------------
     // generate marker peptides
     //-------------------------------------------------------------
@@ -186,14 +204,26 @@ protected:
     // writing output
     //-------------------------------------------------------------
 
-
     TextFile of;
+    FASTAFile of_fasta;
     for (Size i = 0; i < sheet.group_names.size(); ++i)
     {
         if (!marker[i].empty())
-            of << sheet.group_names[i] + '\t' + ListUtils::concatenate(marker[i],"\t");
+        {
+            StringList seqs(marker[i].size());
+            std::transform(marker[i].begin(), marker[i].end(), seqs.begin(), [](decltype (marker[i][0]) & p){return p.first;});
+            of << sheet.group_names[i] + '\t' + ListUtils::concatenate(seqs,"\t");
+        }
         else
             of << sheet.group_names[i];
+
+        if (!opt.output_dir.empty())
+        {
+            std::vector<FASTAFile::FASTAEntry> fa_entries;
+            for (const auto & m : marker[i])
+                fa_entries.push_back(FASTAFile::FASTAEntry(m.first,ListUtils::concatenate(m.second, ' '), m.first));
+            of_fasta.store(QDir(opt.output_dir.toQString()).filePath(sheet.group_names[i].toQString().replace(' ','_') + ".fa"), fa_entries);
+        }
     }
     of.store(outfile);
 
@@ -209,9 +239,6 @@ protected:
       std::map<String, unsigned> filename_to_id{};
       StringList sample_names;
       StringList group_names;
-
-//      std::map<String, unsigned> group_to_id{};
-//      std::map<String, unsigned> sample_to_id{};
   };
 
   bool readSampleSheet(const String & filename, const StringList filenames_faa, SampleSheet & samples)
@@ -331,9 +358,12 @@ protected:
       std::vector<unsigned> group_sizes(num_groups, 0);
       std::vector<unsigned> sample_sizes(num_samples, 0);
 
-      TPeptideBitMatrix full_mat; //one column per file
+      std::vector<String> accessions; //stores protein accessions
+      TPeptideProteinTie acc_trace; //match peptides to protein accessions
 
+      TPeptideBitMatrix full_mat; //one column per file
       std::vector<bool> sample_check(num_samples, false);
+
       for (const String & faa : faa_list)
       {
           const auto file_id = sheet.filename_to_id.find(File::basename(faa))->second;
@@ -354,6 +384,8 @@ protected:
           FASTAFile::FASTAEntry fe;
           while(ff.readNext(fe))
           {
+
+              accessions.push_back(fe.identifier);
               std::vector<AASequence> current_digest;
 
               //remove marker for stop codon as the created 'X' cause trouble and would have to be deleted from peptides
@@ -371,10 +403,11 @@ protected:
                       std::replace(tmp.begin(), tmp.end(), 'Q', 'K');
 
 //                  orig_pep_map[tmp].insert(seq.toString());
-                  if (!full_mat.count(tmp))
+                  if (!full_mat.count(tmp))                  
                       full_mat[tmp] = std::vector<bool>(num_files, false);
 
                   full_mat[tmp][file_id] = true;
+                  acc_trace[tmp].push_back(accessions.size()-1);
               }
           }
       }
@@ -430,7 +463,13 @@ protected:
           }
           //store as marker
           if (pot_marker != static_cast<Size>(-1))
-              markers[pot_marker].push_back(row.first);
+          {
+              StringList tmp_acc;
+              for (const auto a : acc_trace[row.first])
+                  tmp_acc.push_back(accessions[a]);
+
+              markers[pot_marker].push_back(std::make_pair(row.first, std::move(tmp_acc)));
+          }
       }
   }
 };
