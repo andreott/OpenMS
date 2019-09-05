@@ -248,13 +248,10 @@ protected:
     std::vector<FASTAFile::FASTAEntry> buffer(max_buffer_size);
     while(!ff.atEnd())
     {
-        //load fasta records into buffer for parallel processing
-        buffer.clear();
+        //load fasta records into buffer for parallel processing        
         Size buff_size = 0;
         while(ff.readNext(buffer[buff_size]) && ++buff_size < max_buffer_size);
-
         const Size cbs = buff_size;
-        //std::cerr << "TOP" << std::endl;
 #ifdef _OPENMP
 #pragma omp parallel
 {
@@ -353,8 +350,8 @@ protected:
 */
 #endif
             ++entry_nr;
-            if(!(entry_nr % 1000000))
-                std::cout << entry_nr << '\n';
+            if(!(entry_nr % 10000))
+                LOG_INFO << entry_nr << std::endl;
         }
 
 #ifdef _OPENMP
