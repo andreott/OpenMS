@@ -100,6 +100,7 @@ protected:
   typedef std::unordered_map<std::string, std::vector<bool>> TPeptideBitMatrix;
   typedef std::unordered_map<std::string, std::vector<Size>> TPeptideProteinTie;
   typedef std::vector<std::vector<std::pair<String, StringList>>> TMarkerList; //one list of peptides per group and one list of assiciated protein accessions
+  typedef std::unordered_map<std::string, std::set<std::string>> TPepMap; //stores mapping from isobaric modified peptide to original pep sequences
 
   void registerOptionsAndFlags_() override
   {
@@ -115,6 +116,9 @@ protected:
 
     registerOutputFile_("out_matrix", "<file>", "", "peptide abundance matrix");
     setValidFormats_("out_matrix", ListUtils::create<String>("csv"));
+    
+    registerOutputFile_("out_mapping", "<file>", "", "original to marker peptide mapping", false);
+    setValidFormats_("out_mapping", ListUtils::create<String>("csv"));
 
     registerIntOption_("missed_cleavages", "<number>", 0, "The number of allowed missed cleavages", false);
     setMinInt_("missed_cleavages", 0);
@@ -160,6 +164,7 @@ protected:
     const StringList faa_files =  getStringList_("in_faa");
     const String samsheet_file = getStringOption_("sample_sheet");
     const String outfile = getStringOption_("out");
+    const String outfile_mapping = getStringOption_("out_mapping");
     const String out_dir = getStringOption_("out_faa_dir");
 
     if (!out_dir.empty())
@@ -197,7 +202,8 @@ protected:
 
     TPeptideMatrix mat;
     TMarkerList marker;
-    generatePeptideMatrix(faa_files, sheet, mat, opt, marker);
+    TPepMap orig_pep_map;
+    generatePeptideMatrix(faa_files, sheet, mat, opt, marker, orig_pep_map);
     std::cerr << "done generating markers\n";
 
     //-------------------------------------------------------------
@@ -226,6 +232,17 @@ protected:
         }
     }
     of.store(outfile);
+    
+    if (!outfile_mapping.empty())
+    {
+        TextFile ofm;
+        for (const auto & entry : orig_pep_map)
+        {            
+            ofm << entry.first + "," + ListUtils::concatenate(entry.second, ',');
+        }
+        ofm.store(outfile_mapping);
+    }
+
 
     return EXECUTION_OK;
   }
@@ -346,7 +363,8 @@ protected:
                              const SampleSheet & sheet,
                              TPeptideMatrix & mat,
                              const Options & opts,
-                             TMarkerList & markers)
+                             TMarkerList & markers,
+                             TPepMap & orig_pep_map)
   {
       ProteaseDigestion digestor;
       digestor.setEnzyme(opts.enzyme);
@@ -361,6 +379,7 @@ protected:
       std::vector<String> accessions; //stores protein accessions
       TPeptideProteinTie acc_trace; //match peptides to protein accessions
 
+      TPepMap orig_pep_map_full;
       TPeptideBitMatrix full_mat; //one column per file
       std::vector<bool> sample_check(num_samples, false);
 
@@ -402,7 +421,7 @@ protected:
                   if (opts.isob > 1)
                       std::replace(tmp.begin(), tmp.end(), 'Q', 'K');
 
-//                  orig_pep_map[tmp].insert(seq.toString());
+                  orig_pep_map_full[tmp].insert(seq.toString());
                   if (!full_mat.count(tmp))                  
                       full_mat[tmp] = std::vector<bool>(num_files, false);
 
@@ -469,6 +488,7 @@ protected:
                   tmp_acc.push_back(accessions[a]);
 
               markers[pot_marker].push_back(std::make_pair(row.first, std::move(tmp_acc)));
+              orig_pep_map.insert({row.first, orig_pep_map_full[row.first]});
           }
       }
   }
